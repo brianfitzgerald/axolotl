@@ -167,3 +167,7 @@ cython_debug/
 # WandB
 # wandb creates a folder to store logs for training runs
 wandb
+
+lora-out
+mlruns
+roborovski
