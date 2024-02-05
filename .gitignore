@@ -171,3 +171,4 @@ wandb
 lora-out
 mlruns
 roborovski
+submit.sh
