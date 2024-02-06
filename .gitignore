@@ -172,3 +172,4 @@ lora-out
 mlruns
 roborovski
 submit.sh
+*.out*

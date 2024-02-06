@@ -15,24 +15,12 @@ def chatml_to_json(conversation: str):
     conversation = conversation.replace("<|endoftext|>", "").replace("\n", " ")
 
     conversation_steps = []
-    matches = re.finditer(pattern, conversation, re.DOTALL)
-
-    start_index = 0
-
-    for i, m in enumerate(matches):
-        role_match = m.group(1)
-        role = ROLE_DICT[role_match]
-        match_start = m.start()
-        match_end = m.end()
-
-        # Split the string from the start_index to the beginning of the match
-        part = conversation[start_index:match_start]
-
-        # Update the start_index for the next split
-        start_index = match_end
-        if i > 0:
-            conversation_steps[-1]["value"] = part
-        conversation_steps.append({"from": role, "value": ""})
+    user_and_assistant_messages = re.split(pattern, conversation)
+    messages = [message.strip() for message in user_and_assistant_messages if message.strip()]
+    for i in range(0, len(messages), 2):
+        role = ROLE_DICT[messages[i]]
+        message = messages[i + 1]
+        conversation_steps.append({"role": role, "message": message})
 
     return conversation_steps
 
@@ -43,7 +31,7 @@ def concatenate_columns(batch):
     conversations = []
 
     for chat, system in zip(batch["chat"], batch["system"]):
-        conversation = chat + " " + system
+        conversation = system + " " + chat
         conversations.append(chatml_to_json(conversation))
 
     batch["conversations"] = conversations
