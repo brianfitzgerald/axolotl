@@ -28,6 +28,7 @@ from transformers import (
 from transformers.trainer_utils import seed_worker
 from trl import DPOTrainer
 
+from axolotl.monkeypatch.multipack import SUPPORTED_MULTIPACK_MODEL_TYPES
 from axolotl.monkeypatch.relora import ReLoRACallback, ReLoRAScheduler
 from axolotl.utils.callbacks import (
     EvalFirstStepCallback,
@@ -37,6 +38,7 @@ from axolotl.utils.callbacks import (
     SaveAxolotlConfigtoWandBCallback,
     SaveBetterTransformerModelCallback,
     bench_eval_callback_factory,
+    causal_lm_bench_eval_callback_factory,
     log_prediction_callback_factory,
 )
 from axolotl.utils.collators import (
@@ -49,6 +51,7 @@ from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
 from axolotl.utils.schedulers import (
     get_cosine_schedule_with_min_lr,
     get_cosine_schedule_with_quadratic_warmup,
+    get_cosine_schedule_with_warmup_decay_constant,
 )
 
 try:
@@ -126,6 +129,14 @@ class AxolotlTrainingArguments(TrainingArguments):
         default=None,
         metadata={"help": "how many warmup steps to take after reset for ReLoRA"},
     )
+    relora_anneal_steps: Optional[int] = field(
+        default=None,
+        metadata={"help": "how many warmup steps to take after reset for ReLoRA"},
+    )
+    relora_prune_ratio: Optional[float] = field(
+        default=0.9,
+        metadata={"help": "prune ratio for magnitude pruning of the optimizer"},
+    )
     bench_split: Optional[str] = field(
         default="eval", metadata={"help": "The benchmark split to run on"}
     )
@@ -137,6 +148,9 @@ class AxolotlTrainingArguments(TrainingArguments):
     )
     do_bench_eval: Optional[bool] = field(
         default=False, metadata={"help": "Whether to run the Benchmark evaluation."}
+    )
+    do_causal_lm_eval: Optional[bool] = field(
+        default=False, metadata={"help": "Whether to run the Causal LM evaluation."}
     )
     max_bench_samples: Optional[int] = field(
         default=None,
@@ -154,6 +168,12 @@ class AxolotlTrainingArguments(TrainingArguments):
     cosine_min_lr_ratio: Optional[float] = field(
         default=None,
         metadata={"help": "Minimum learning rate is min_lr_ratio * learning_rate"},
+    )
+    cosine_constant_lr_ratio: Optional[float] = field(
+        default=None,
+        metadata={
+            "help": "Starting constant learning rate step is cosine_constant_lr_ratio * max_steps"
+        },
     )
 
 
@@ -211,6 +231,16 @@ class AxolotlTrainer(Trainer):
                     optimizer,
                     num_warmup_steps=self.args.get_warmup_steps(num_training_steps),
                     num_training_steps=num_training_steps,
+                )
+            elif self.args.cosine_min_lr_ratio and self.args.cosine_constant_lr_ratio and use_cosine_min_lr:
+                assert 0 <= self.args.cosine_min_lr_ratio <= 1.0, "cosine_min_lr_ratio must be between 0.0 and 1.0"
+                assert 0 <= self.args.cosine_constant_lr_ratio <= 1.0, "cosine_constant_lr_ratio must be between 0.0 and 1.0"
+                self.lr_scheduler = get_cosine_schedule_with_warmup_decay_constant(  # pylint: disable=attribute-defined-outside-init
+                    optimizer,
+                    num_warmup_steps=self.args.get_warmup_steps(num_training_steps),
+                    num_training_steps=num_training_steps,
+                    min_lr_ratio=self.args.cosine_min_lr_ratio,
+                    constant_lr_ratio=self.args.cosine_constant_lr_ratio,
                 )
             elif self.args.cosine_min_lr_ratio and use_cosine_min_lr:
                 assert 0 <= self.args.cosine_min_lr_ratio <= 1.0, "cosine_min_lr_ratio must be between 0.0 and 1.0"
@@ -478,10 +508,14 @@ class ReLoRATrainer(AxolotlTrainer):
             warmup_steps = (
                 self.args.relora_warmup_steps if self.args.relora_warmup_steps else 10
             )
+            anneal_steps = (
+                self.args.relora_anneal_steps if self.args.relora_anneal_steps else 1
+            )
             self.lr_scheduler = ReLoRAScheduler(
                 optimizer,
                 lr_scheduler,
                 self.args.relora_steps,
+                anneal_steps,
                 warmup_steps,
             )
         else:
@@ -634,6 +668,11 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
 
         if self.cfg.do_bench_eval:
             callbacks.append(bench_eval_callback_factory(trainer, self.tokenizer))
+        if self.cfg.do_causal_lm_eval:
+            CausalLMBenchEvalCallback = causal_lm_bench_eval_callback_factory(
+                trainer, self.tokenizer
+            )
+            callbacks.append(CausalLMBenchEvalCallback(self.cfg))
 
         if self.cfg.early_stopping_patience:
             early_stop_cb = EarlyStoppingCallback(
@@ -782,6 +821,8 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             training_arguments_kwargs["do_bench_eval"] = self.cfg.do_bench_eval
             if self.cfg.bench_dataset:
                 training_arguments_kwargs["bench_dataset"] = self.cfg.bench_dataset
+        if self.cfg.do_causal_lm_eval:
+            training_arguments_kwargs["do_causal_lm_eval"] = self.cfg.do_causal_lm_eval
         if self.cfg.metric_for_best_model:
             training_arguments_kwargs[
                 "metric_for_best_model"
@@ -874,6 +915,9 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             self.cfg.lr_scheduler_kwargs if self.cfg.lr_scheduler_kwargs else {}
         )
         training_arguments_kwargs["cosine_min_lr_ratio"] = self.cfg.cosine_min_lr_ratio
+        training_arguments_kwargs[
+            "cosine_constant_lr_ratio"
+        ] = self.cfg.cosine_constant_lr_ratio
         training_arguments_kwargs["weight_decay"] = (
             self.cfg.weight_decay if self.cfg.weight_decay is not None else 0.0
         )
@@ -891,8 +935,20 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         training_arguments_kwargs[
             "sample_packing_seq_len_multiplier"
         ] = self.cfg.micro_batch_size
-        training_arguments_kwargs["relora_steps"] = self.cfg.relora_steps
-        training_arguments_kwargs["relora_warmup_steps"] = self.cfg.relora_warmup_steps
+        if self.cfg.relora_steps:
+            training_arguments_kwargs["relora_steps"] = self.cfg.relora_steps
+            training_arguments_kwargs[
+                "relora_warmup_steps"
+            ] = self.cfg.relora_warmup_steps
+            if self.cfg.relora_anneal_steps:
+                training_arguments_kwargs[
+                    "relora_anneal_steps"
+                ] = self.cfg.relora_anneal_steps
+            if self.cfg.relora_prune_ratio:
+                training_arguments_kwargs[
+                    "relora_prune_ratio"
+                ] = self.cfg.relora_prune_ratio
+
         training_arguments_kwargs = self.hook_pre_create_training_args(
             training_arguments_kwargs
         )
@@ -985,7 +1041,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             ]
         ]
         if use_batch_sampler_collator:
-            if self.cfg.model_config_type in ["mixtral", "qwen2", "falcon", "phi"]:
+            if self.cfg.model_config_type in SUPPORTED_MULTIPACK_MODEL_TYPES:
                 collator = V2BatchSamplerDataCollatorForSeq2Seq
             elif (
                 self.cfg.model_config_type in ["llama"]
@@ -1087,13 +1143,21 @@ class HFDPOTrainerBuilder(TrainerBuilderBase):
                     "use_reentrant": False
                 }
 
+        # set save_strategy and save_steps
+        if self.cfg.save_steps:
+            training_args_kwargs["save_strategy"] = "steps"
+            training_args_kwargs["save_steps"] = self.cfg.save_steps
+        elif self.cfg.save_strategy:
+            training_args_kwargs["save_strategy"] = self.cfg.save_strategy
+        else:
+            # default to saving each epoch if not defined
+            training_args_kwargs["save_strategy"] = "epoch"
+
         training_args = TrainingArguments(
             per_device_train_batch_size=self.cfg.micro_batch_size,
             max_steps=self.cfg.max_steps or total_num_steps,
             gradient_accumulation_steps=self.cfg.gradient_accumulation_steps,
             learning_rate=self.cfg.learning_rate,
-            save_strategy="steps",
-            save_steps=self.cfg.save_steps,
             output_dir=self.cfg.output_dir,
             warmup_steps=self.cfg.warmup_steps,
             logging_first_step=True,

@@ -8,7 +8,13 @@ import addict
 import bitsandbytes as bnb
 import torch
 import transformers
-from peft import LoftQConfig, PeftConfig, prepare_model_for_kbit_training
+from peft import (
+    LoftQConfig,
+    PeftConfig,
+    PeftModel,
+    PeftModelForCausalLM,
+    prepare_model_for_kbit_training,
+)
 from peft.tuners.lora import QuantLinear
 from transformers import (  # noqa: F401
     AddedToken,
@@ -23,6 +29,10 @@ from transformers import (  # noqa: F401
 from transformers.integrations.deepspeed import is_deepspeed_zero3_enabled
 
 from axolotl.models.mamba import fix_mamba_attn_for_loss
+from axolotl.monkeypatch.multipack import (
+    SUPPORTED_MULTIPACK_MODEL_TYPES,
+    patch_for_multipack,
+)
 from axolotl.prompt_tokenizers import LLAMA_DEFAULT_EOS_TOKEN
 from axolotl.utils.bench import log_gpu_memory_usage
 from axolotl.utils.chat_templates import chat_templates
@@ -293,8 +303,15 @@ def load_model(
         shifted-sparse attention does not currently support sample packing."
         )
 
-    # Modify all llama derived models in one block
-    if cfg.is_llama_derived_model:
+    if (
+        cfg.model_config_type in SUPPORTED_MULTIPACK_MODEL_TYPES
+        and cfg.flash_attention
+        and cfg.sample_packing
+    ):
+        patch_for_multipack(cfg.model_config_type)
+    elif cfg.is_llama_derived_model:
+        # Modify all llama derived models in one block
+
         if cfg.flash_attention:
             from axolotl.monkeypatch.llama_attn_hijack_flash import (
                 replace_llama_attn_with_flash_attn,
@@ -348,43 +365,6 @@ def load_model(
         LOG.info("patching mistral with flash attention")
         replace_mistral_attn_with_flash_attn(packed=cfg.sample_packing)
 
-    if (
-        cfg.model_config_type == "mixtral"
-        and cfg.flash_attention
-        and cfg.sample_packing
-    ):
-        from axolotl.monkeypatch.mixtral import (
-            replace_mixtral_attn_with_multipack_flash_attn,
-        )
-
-        LOG.info("patching mixtral with flash attention")
-        mixtral_patch_kwargs = {}
-        if is_deepspeed_zero3_enabled():
-            mixtral_patch_kwargs["for_zero3"] = True
-        replace_mixtral_attn_with_multipack_flash_attn(**mixtral_patch_kwargs)
-
-    if cfg.model_config_type == "falcon" and cfg.flash_attention and cfg.sample_packing:
-        from axolotl.monkeypatch.falcon import (
-            replace_falcon_attn_with_multipack_flash_attn,
-        )
-
-        LOG.info("patching falcon with flash attention")
-        replace_falcon_attn_with_multipack_flash_attn()
-
-    if cfg.model_config_type == "phi" and cfg.flash_attention and cfg.sample_packing:
-        from axolotl.monkeypatch.phi import replace_phi_attn_with_multipack_flash_attn
-
-        LOG.info("patching phi with flash attention")
-        replace_phi_attn_with_multipack_flash_attn()
-
-    if cfg.model_config_type == "qwen2" and cfg.flash_attention and cfg.sample_packing:
-        from axolotl.monkeypatch.qwen2 import (
-            replace_qwen2_attn_with_multipack_flash_attn,
-        )
-
-        LOG.info("patching qwen2 with flash attention")
-        replace_qwen2_attn_with_multipack_flash_attn()
-
     if cfg.is_llama_derived_model and cfg.sample_packing and not inference:
         from axolotl.monkeypatch.llama_expand_mask import hijack_expand_mask
 
@@ -394,7 +374,7 @@ def load_model(
     model_kwargs: Dict[str, Any] = {}
 
     if cfg.model_kwargs:
-        for key, val in model_kwargs.items():
+        for key, val in cfg.model_kwargs.items():
             model_kwargs[key] = val
 
     max_memory = cfg.max_memory
@@ -429,6 +409,10 @@ def load_model(
 
     model_kwargs["device_map"] = device_map
     model_kwargs["torch_dtype"] = cfg.torch_dtype
+
+    if torch.backends.mps.is_available():
+        model_kwargs["device_map"] = "mps:0"
+
     # TODO can we put the reference model on it's own gpu? I think we have to move logits around to calculate loss
     # if cfg.rl:
     #     if torch.cuda.device_count() > 1:
@@ -495,7 +479,7 @@ def load_model(
                 "flash_attention_2"
             )
         else:
-            if model_config.model_type in ["mixtral", "qwen2", "falcon", "phi"]:
+            if model_config.model_type in SUPPORTED_MULTIPACK_MODEL_TYPES:
                 model_kwargs["attn_implementation"] = "flash_attention_2"
                 model_config._attn_implementation = (  # pylint: disable=protected-access
                     "flash_attention_2"
@@ -628,6 +612,9 @@ def load_model(
         LOG.exception(err)
         raise err
 
+    if isinstance(model, (PeftModel, PeftModelForCausalLM)):
+        model = model.merge_and_unload()
+
     embeddings_len = (
         math.ceil(len(tokenizer) / 32) * 32
         if cfg.resize_token_embeddings_to_32x
@@ -668,7 +655,7 @@ def load_model(
     ):
         model.config.eos_token_id = tokenizer.eos_token_id
 
-    if hasattr(model, "device") and model.device.type == "cuda":
+    if hasattr(model, "device") and model.device.type in ("cuda", "mps"):
         log_gpu_memory_usage(LOG, "after model load", model.device)
 
     # make sure these are fp32 per Ramesh et al. (2021)
@@ -782,7 +769,7 @@ def load_adapter(model, cfg, adapter, inference=False):
 
 def load_llama_adapter(model, cfg):
     # type: (PreTrainedModel, DictDefault) -> Tuple[PreTrainedModel, Optional[PeftConfig]]
-    from peft import AdaptionPromptConfig, PeftModel, get_peft_model
+    from peft import AdaptionPromptConfig, get_peft_model
 
     peft_config = AdaptionPromptConfig(
         adapter_layers=cfg.peft_adapter.layers,  # layers (L)
@@ -828,7 +815,7 @@ def find_all_linear_names(model):
 def load_lora(model, cfg, inference=False, config_only=False):
     # type: (PreTrainedModel, DictDefault, bool, bool) -> Tuple[Optional[PreTrainedModel], Optional[PeftConfig]]
 
-    from peft import LoraConfig, PeftModel, get_peft_model
+    from peft import LoraConfig, get_peft_model
 
     lora_target_modules = list(cfg.lora_target_modules or [])
 
