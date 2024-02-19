@@ -360,7 +360,8 @@ class ShareGPTPromptTokenizingStrategy(PromptTokenizingStrategy):
                     LOG.warning(f"expected tuple, got {part}")
                     continue
 
-                user, assistant = conversation.roles
+                # TODO handle three or two roles depending on whether tool usage is enabled
+                user, assistant, tool = conversation.roles
                 role, content = part
 
                 # Uses "in" because role contains extra characters
@@ -384,7 +385,7 @@ class ShareGPTPromptTokenizingStrategy(PromptTokenizingStrategy):
                     else:
                         # everything from this is masked out from the labels
                         labels = [IGNORE_TOKEN_ID] * len(res["input_ids"])
-                elif assistant in role:
+                elif assistant in role or tool in role:
                     role = (
                         role.replace(role_remap[1]["from"], role_remap[1]["to"])
                         if role_remap

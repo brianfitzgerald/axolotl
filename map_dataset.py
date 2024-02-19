@@ -1,29 +1,7 @@
 import fire
 from datasets import load_dataset
 import re
-
-ROLE_DICT = {
-    "ASSISTANT": "gpt",
-    "USER": "human",
-    "SYSTEM": "gpt",
-}
-
-
-def chatml_to_json(conversation: str):
-    pattern = r"(SYSTEM|USER|ASSISTANT):"
-
-    conversation = conversation.replace("<|endoftext|>", "").replace("\n", " ")
-
-    conversation_steps = []
-    user_and_assistant_messages = re.split(pattern, conversation)
-    messages = [message.strip() for message in user_and_assistant_messages if message.strip()]
-    for i in range(0, len(messages), 2):
-        role = ROLE_DICT[messages[i]]
-        message = messages[i + 1]
-        conversation_steps.append({"role": role, "message": message})
-
-    return conversation_steps
-
+from typing import List, Dict
 
 def concatenate_columns(batch):
     """Concatenate 'chat' and 'system' columns into a new 'conversation' column."""

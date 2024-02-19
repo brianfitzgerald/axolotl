@@ -8,13 +8,17 @@ load_in_4bit: false
 strict: false
 
 datasets:
-  - path: roborovski/glaive-function-calling-v2-conversation
-    type: sharegpt
-    conversation: llama-2
+  - path: glaiveai/glaive-function-calling-v2
+    type: sharegpt.load_glaive
+    conversation: chatml_glaive
 
-dataset_prepared_path:
+dataset_prepared_path: ./.prepared-datasets/glaive-function-calling-v2-sharegpt
 val_set_size: 0.05
-output_dir: ./lora-out
+output_dir: ./tinyllama-function-calling
+dataset_processes: 1
+
+eval_table_size: 4
+eval_sample_packing: false
 
 sequence_len: 4096
 sample_packing: true
@@ -28,7 +32,7 @@ lora_dropout: 0.05
 lora_target_linear: true
 lora_fan_in_fan_out:
 
-wandb_project: llama-function-calling
+wandb_project:
 wandb_entity:
 wandb_watch:
 wandb_name:
@@ -43,8 +47,8 @@ learning_rate: 0.0002
 
 train_on_inputs: false
 group_by_length: false
-bf16: auto
-fp16:
+bf16: true
+fp16: false
 tf32: false
 
 gradient_checkpointing: true
