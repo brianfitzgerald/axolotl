@@ -15,7 +15,6 @@ datasets:
 dataset_prepared_path: ./.prepared-datasets/glaive-function-calling-v2-sharegpt
 val_set_size: 0.05
 output_dir: ./tinyllama-function-calling
-dataset_processes: 1
 
 eval_table_size: 4
 eval_sample_packing: false
@@ -32,7 +31,7 @@ lora_dropout: 0.05
 lora_target_linear: true
 lora_fan_in_fan_out:
 
-wandb_project:
+wandb_project: tinyllama-glaive-fn-call
 wandb_entity:
 wandb_watch:
 wandb_name:

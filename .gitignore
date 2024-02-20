@@ -173,3 +173,5 @@ mlruns
 roborovski
 submit.sh
 *.out*
+.prepared-datasets
+tinyllama-function-calling
