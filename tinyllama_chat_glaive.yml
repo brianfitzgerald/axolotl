@@ -13,11 +13,14 @@ datasets:
     conversation: chatml_glaive
 
 dataset_prepared_path: ./.prepared-datasets/glaive-function-calling-v2-sharegpt
-val_set_size: 0.05
+val_set_size: 0.01
 output_dir: ./tinyllama-function-calling
 
 eval_table_size: 4
 eval_sample_packing: false
+eval_max_new_tokens: 256
+eval_causal_lm_metrics: ["sacrebleu", "comet", "ter", "chrf", "rouge"]
+do_causal_lm_eval: true
 
 sequence_len: 4096
 sample_packing: true
@@ -42,7 +45,7 @@ micro_batch_size: 2
 num_epochs: 4
 optimizer: adamw_bnb_8bit
 lr_scheduler: cosine
-learning_rate: 0.0002
+learning_rate: 0.0001
 
 train_on_inputs: false
 group_by_length: false
