@@ -34,7 +34,7 @@ Features:
   - [How to Use Custom Pretokenized Dataset](#how-to-use-your-custom-pretokenized-dataset)
 - [Config](#config)
   - [Train](#train)
-  - [Inference](#inference)
+  - [Inference](#inference-playground)
   - [Merge LORA to Base](#merge-lora-to-base)
   - [Special Tokens](#special-tokens)
 - Advanced Topics
@@ -518,7 +518,7 @@ base_model_ignore_patterns:
 base_model_config: ./llama-7b-hf
 # You can specify to choose a specific model revision from huggingface hub
 model_revision:
-# Optional tokenizer configuration override in case you want to use a different tokenizer
+# Optional tokenizer configuration path in case you want to use a different tokenizer
 # than the one defined in the base model
 tokenizer_config:
 # If you want to specify the type of model to load, AutoModelForCausalLM is a good choice too
