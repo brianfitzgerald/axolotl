@@ -175,3 +175,7 @@ submit.sh
 *.out*
 .prepared-datasets
 tinyllama-function-calling
+# Runs
+lora-out/*
+qlora-out/*
+mlruns/*
