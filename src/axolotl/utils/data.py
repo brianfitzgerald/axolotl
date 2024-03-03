@@ -56,6 +56,16 @@ from axolotl.utils.trainer import (
 
 LOG = logging.getLogger("axolotl")
 
+def dataset_hash(dataset: Union[Dataset, DatasetDict], cfg: DictDefault, split: str) -> str:
+    return (
+        dataset._fingerprint  # pylint: disable=protected-access
+        + "|"
+        + str(cfg.val_set_size)
+        + "|"
+        + split
+        + "|"
+        + str(cfg.seed or 42)
+    )
 
 def md5(to_hash: str, encoding: str = "utf-8") -> str:
     try:
@@ -473,24 +483,8 @@ def load_prepare_datasets(
 
     if split == "train" and cfg.val_set_size:
         # ensure we end up with the same fingerprint by doing rank0 first and being able to cache
-        to_hash_train = (
-            dataset._fingerprint  # pylint: disable=protected-access
-            + "|"
-            + str(cfg.val_set_size)
-            + "|"
-            + "train"
-            + "|"
-            + str(cfg.seed or 42)
-        )
-        to_hash_test = (
-            dataset._fingerprint  # pylint: disable=protected-access
-            + "|"
-            + str(cfg.val_set_size)
-            + "|"
-            + "test"
-            + "|"
-            + str(cfg.seed or 42)
-        )
+        to_hash_train = dataset_hash(dataset, cfg, "train")
+        to_hash_test = dataset_hash(dataset, cfg, "test")
         train_fingerprint = md5(to_hash_train)
         test_fingerprint = md5(to_hash_test)
 
@@ -960,7 +954,27 @@ def load_prepare_dpo_datasets(cfg):
             train_dataset = load_split(cfg.datasets, cfg)
 
         eval_dataset = None
-        if cfg.test_datasets:
+
+        if cfg.val_set_size:
+
+            # ensure we end up with the same fingerprint by doing rank0 first and being able to cache
+            to_hash_train = dataset_hash(train_dataset, cfg, "train")
+            to_hash_test = dataset_hash(train_dataset, cfg, "test")
+
+            train_fingerprint = md5(to_hash_train)
+            test_fingerprint = md5(to_hash_test)
+
+            dataset = train_dataset.train_test_split( # type: ignore
+                test_size=cfg.val_set_size,
+                shuffle=False,
+                seed=cfg.seed or 42,
+                train_new_fingerprint=train_fingerprint,
+                test_new_fingerprint=test_fingerprint,
+            )
+
+            train_dataset = dataset["train"]
+            eval_dataset = dataset["test"]
+        elif cfg.test_datasets:
             if eval_dataset := _load_preprocessed_ds(cfg, cfg.test_datasets):
                 eval_is_preprocessed = True
             else:

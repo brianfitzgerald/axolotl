@@ -1131,11 +1131,20 @@ class HFDPOTrainerBuilder(TrainerBuilderBase):
         if self.cfg.save_safetensors is not None:
             training_args_kwargs["save_safetensors"] = self.cfg.save_safetensors
 
-        if self.eval_dataset:
+        if not self.cfg.test_datasets and self.cfg.val_set_size == 0:
+            # no eval set, so don't eval
+            training_args_kwargs["evaluation_strategy"] = "no"
+        elif self.cfg.eval_steps:
             training_args_kwargs["evaluation_strategy"] = "steps"
             training_args_kwargs["eval_steps"] = self.cfg.eval_steps
+        elif self.cfg.evaluation_strategy:
+            training_args_kwargs[
+                "evaluation_strategy"
+            ] = self.cfg.evaluation_strategy
         else:
-            training_args_kwargs["evaluation_strategy"] = "no"
+            # we have an eval set, but no steps defined, default to use epoch
+            training_args_kwargs["evaluation_strategy"] = "epoch"
+
         if self.cfg.bf16 or self.cfg.bfloat16:
             training_args_kwargs["bf16"] = True
 
