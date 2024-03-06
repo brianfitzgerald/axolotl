@@ -168,13 +168,6 @@ cython_debug/
 # wandb creates a folder to store logs for training runs
 wandb
 
-lora-out
-mlruns
-roborovski
-submit.sh
-*.out*
-.prepared-datasets
-tinyllama-function-calling
 # Runs
 lora-out/*
 qlora-out/*
