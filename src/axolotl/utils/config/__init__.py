@@ -575,7 +575,7 @@ def legacy_validate_config(cfg):
         )
 
     if cfg.eval_causal_lm_metrics:
-        supported_metrics = ["sacrebleu", "comet", "ter", "chrf", "rouge"]
+        supported_metrics = ["sacrebleu", "comet", "ter", "chrf"]
         if not isinstance(cfg.eval_causal_lm_metrics, list):
             raise ValueError("eval_causal_lm_metrics must be a list")
         # only ["sacrebleu", "comet", "ter", "chrf"] supported
