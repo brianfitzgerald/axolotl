@@ -51,6 +51,10 @@ GLAIVE_MSG_REGEX = re.compile(r"({}): ".format("|".join(GLAIVE_ROLES)))
 
 
 def chatml_to_conversation(row: Dict[str, str]) -> List[Dict[str, str]]:
+    """
+    Converts a ChatML formatted row to a list of messages in ShareGPT format.
+    Initially based off https://github.com/lilacai/lilac/blob/main/notebooks/GlaiveToShareGPT.ipynb.
+    """
 
     system_prompt = row.get("system")
     if system_prompt:
@@ -74,7 +78,8 @@ def chatml_to_conversation(row: Dict[str, str]) -> List[Dict[str, str]]:
 
 def merge_consecutive_messages(messages):
     """
-    Merge messages by the same sender that are consecutive
+    Merge consecutive messages from the same sender into a single message.
+    This can be useful with datasets that contain multiple consecutive tool calls.
     """
 
     merged_messages = []

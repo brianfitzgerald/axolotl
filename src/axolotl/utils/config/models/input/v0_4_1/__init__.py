@@ -178,10 +178,22 @@ class LoraConfig(BaseModel):
     lora_dropout: Optional[float] = None
     peft_layers_to_transform: Optional[List[int]] = None
     peft: Optional[PeftConfig] = None
+    peft_use_dora: Optional[bool] = None
 
     lora_on_cpu: Optional[bool] = None
     gptq: Optional[bool] = None
     bnb_config_kwargs: Optional[Dict[str, Any]] = None
+
+    loraplus_lr_ratio: Optional[float] = Field(
+        default=None,
+        metadata={
+            "help": "loraplus learning rate ratio lr_B / lr_A. Recommended value is 2^4."
+        },
+    )
+    loraplus_lr_embedding: Optional[float] = Field(
+        default=1e-6,
+        metadata={"help": "loraplus learning rate for lora embedding layers."},
+    )
 
     merge_lora: Optional[bool] = None
 
@@ -221,6 +233,17 @@ class LoraConfig(BaseModel):
                 if not self.load_in_4bit:
                     raise ValueError("Require cfg.load_in_4bit to be True for qlora")
         return self
+
+    @model_validator(mode="before")
+    @classmethod
+    def validate_quantized_dora(cls, data):
+        if data.get("peft_use_dora") and (
+            data.get("load_in_8bit") or data.get("load_in_4bit")
+        ):
+            raise ValueError(
+                "`peft_use_dora` is not currently compatible with quantized weights."
+            )
+        return data
 
 
 class ReLoRAConfig(BaseModel):
