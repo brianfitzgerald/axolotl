@@ -6,7 +6,10 @@ from fastchat.conversation import Conversation, SeparatorStyle, register_conv_te
 
 from axolotl.prompt_tokenizers import ShareGPTPromptTokenizingStrategy
 from axolotl.prompters import ShareGPTPrompterV2
-from axolotl.utils.tokenization import chatml_to_conversation, merge_consecutive_messages
+from axolotl.utils.tokenization import (
+    chatml_to_conversation,
+    merge_consecutive_messages,
+)
 
 
 def register_chatml_template(system_message=None):
@@ -91,7 +94,9 @@ def load_guanaco(tokenizer, cfg):
 
 def load_glaive(tokenizer, cfg, ds_cfg: Optional[Dict[str, Any]] = None):
     conversation = (
-        ds_cfg["conversation"] if ds_cfg and "conversation" in ds_cfg else None
+        ds_cfg["conversation"]
+        if ds_cfg and "conversation" in ds_cfg
+        else "chatml_glaive"
     )
     return GlaiveShareGPTPromptTokenizingStrategy(
         ShareGPTPrompterV2(conversation=conversation),
@@ -189,8 +194,8 @@ class GlaiveShareGPTPromptTokenizingStrategy(SimpleShareGPTPromptTokenizingStrat
     sharegpt strategy that remaps glaive data to sharegpt format
     """
 
-    def get_conversation_thread(self, row):
-        conversation = chatml_to_conversation(row)
+    def get_conversation_thread(self, prompt):
+        conversation = chatml_to_conversation(prompt)
         conversation = merge_consecutive_messages(conversation)
-        
+
         return conversation
