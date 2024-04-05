@@ -22,24 +22,30 @@ dataset_prepared_path: ./prepared-datasets/gemma-glaive
 output_dir: ./lora-out/gemma-glaive-sft
 
 adapter: qlora
-lora_r: 32
-lora_alpha: 16
+lora_r: 16
+lora_alpha: 32
 lora_dropout: 0.05
 lora_target_linear: true
+lora_target_modules:
+  - down_proj
+  - up_proj
+  - q_proj
+  - v_proj
+  - k_proj
+  - o_proj
 
 sequence_len: 4096
 sample_packing: true
-eval_sample_packing: false
 pad_to_sequence_len: true
 
-# wandb_project: gemma-2b-glaive
+wandb_project: gemma-2b-glaive
 
 gradient_accumulation_steps: 3
 micro_batch_size: 6
 num_epochs: 4
 optimizer: adamw_bnb_8bit
-lr_scheduler: cosine
-learning_rate: 0.0002
+lr_scheduler: linear
+learning_rate: 5e-5
 
 train_on_inputs: false
 group_by_length: false
@@ -52,10 +58,14 @@ local_rank:
 logging_steps: 1
 flash_attention: true
 
-warmup_ratio: 0.1
+warmup_steps: 10
+eval_table_size:
 eval_max_new_tokens: 128
 saves_per_epoch: 1
 weight_decay: 0.0
 evals_per_epoch: 4
 eval_batch_size: 1
-do_causal_lm_eval: true
+eval_sample_packing: false
+fsdp:
+fsdp_config:
+special_tokens:

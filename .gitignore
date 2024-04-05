@@ -175,3 +175,4 @@ mlruns/*
 
 /.quarto/
 prepared-datasets/
+submit.sh
