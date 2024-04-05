@@ -6,19 +6,19 @@ load_in_8bit: false
 load_in_4bit: true
 strict: false
 
-datasets:
-  - path: tatsu-lab/alpaca
-    type: alpaca
-val_set_size: 0.1
-
 # datasets:
-#   - path: glaiveai/glaive-function-calling-v2
-#     type: sharegpt.load_glaive
-#     split: train
-#     conversation: chatml_glaive
+#   - path: tatsu-lab/alpaca
+#     type: alpaca
 # val_set_size: 0.1
 
-dataset_prepared_path: ./prepared-datasets/gemma-glaive
+datasets:
+  - path: glaiveai/glaive-function-calling-v2
+    type: sharegpt.load_glaive
+    split: train
+    conversation: chatml
+val_set_size: 0.1
+
+dataset_prepared_path: ./prepared-datasets/gemma-glaive-fc
 output_dir: ./lora-out/gemma-glaive-sft
 
 adapter: qlora
@@ -37,8 +37,6 @@ lora_target_modules:
 sequence_len: 4096
 sample_packing: true
 pad_to_sequence_len: true
-
-wandb_project: gemma-2b-glaive
 
 gradient_accumulation_steps: 3
 micro_batch_size: 6
