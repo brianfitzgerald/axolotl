@@ -746,7 +746,7 @@ def log_prediction_callback_factory(trainer: Trainer, tokenizer, use_wandb: bool
                                 prediction_text,
                                 pred_step_text,
                             )
-                            row_index += 1
+                    row_index += 1
 
                 if use_wandb:
                     wandb.run.log({f"{name} - Predictions vs Ground Truth": table})  # type: ignore[attr-defined]
