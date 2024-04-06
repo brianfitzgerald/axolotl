@@ -1,6 +1,7 @@
 base_model: google/gemma-1.1-2b-it
 model_type: AutoModelForCausalLM
 tokenizer_type: AutoTokenizer
+chat_template: gemma
 
 load_in_8bit: false
 load_in_4bit: true
@@ -23,8 +24,8 @@ dataset_prepared_path: ./prepared-datasets/gemma-glaive-fc
 output_dir: ./lora-out/gemma-glaive-sft
 
 adapter: qlora
-lora_r: 16
-lora_alpha: 32
+lora_r: 128
+lora_alpha: 64
 lora_dropout: 0.05
 lora_target_linear: true
 lora_target_modules:
@@ -60,8 +61,10 @@ logging_steps: 1
 flash_attention: true
 
 eval_steps: 1000
-eval_table_size: 4
-eval_batch_size: 1
+eval_table_size: 8
+eval_batch_size: 4
 eval_sample_packing: false
 eval_max_new_tokens: 64
 do_causal_lm_eval: true
+special_tokens:
+  additional_special_tokens: ["<functioncall>"]

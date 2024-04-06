@@ -247,6 +247,7 @@ def load_tokenizer(cfg):
         tokenizer.add_special_tokens(
             {"additional_special_tokens": additional_special_tokens}
         )
+        LOG.debug(f"Added additional special tokens: {additional_special_tokens}")
 
     with zero_only():
         LOG.debug(f"EOS: {tokenizer.eos_token_id} / {tokenizer.eos_token}")

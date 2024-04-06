@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from shutil import copyfile
 from tempfile import NamedTemporaryFile
 from typing import TYPE_CHECKING, Dict, List
@@ -340,9 +341,9 @@ def bench_eval_callback_factory(trainer, tokenizer):
                     bench_refs.extend(combined_bench_names[bench_name]["refs"])
                     bench_preds.extend(combined_bench_names[bench_name]["preds"])
                     if not pd.isna(bench_score):
-                        results[f"{bench_split}_bench_accuracy_{bench_name}"] = (
-                            bench_score
-                        )
+                        results[
+                            f"{bench_split}_bench_accuracy_{bench_name}"
+                        ] = bench_score
                         bench_scores.append(bench_score)
                     else:
                         results[f"{bench_split}_bench_accuracy_{bench_name}"] = 0.0
@@ -541,6 +542,16 @@ def causal_lm_bench_eval_callback_factory(trainer: Trainer, tokenizer):
     return CausalLMBenchEvalCallback
 
 
+def clean_message(message: str) -> str:
+    """
+    Clean up consecutive spaces, tabs, and newlines in a message with a JSON dict.
+    """
+    message = message.strip()
+    message = re.sub(r"\n+|\t+", "", message)
+    message = re.sub(r"  +", " ", message)
+    return message
+
+
 def log_prediction_callback_factory(trainer: Trainer, tokenizer, use_wandb: bool):
     class LogPredictionCallback(TrainerCallback):
         """Callback to log prediction values during each evaluation"""
@@ -707,10 +718,10 @@ def log_prediction_callback_factory(trainer: Trainer, tokenizer, use_wandb: bool
                     row_wise_samples = [
                         list(row)
                         for row in zip(
-                            *prompt_texts,
-                            completion_texts,
-                            predicted_texts,
-                            pred_step_texts,
+                            [clean_message(text) for text in prompt_texts],
+                            [clean_message(text) for text in completion_texts],
+                            [clean_message(text) for text in predicted_texts],
+                            [clean_message(text) for text in pred_step_texts],
                         )
                     ]
                     print(
@@ -722,7 +733,8 @@ def log_prediction_callback_factory(trainer: Trainer, tokenizer, use_wandb: bool
                                 "Predicted Completion (model.generate)",
                                 "Predicted Completion (trainer.prediction_step)",
                             ],
-                            maxcolwidths=[50, 50, 50, 50],
+                            tablefmt="simple_grid",
+                            maxcolwidths=[35, 35, 35, 35],
                         )
                     )
 
