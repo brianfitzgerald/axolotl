@@ -99,12 +99,18 @@ def load_guanaco(tokenizer, cfg):
 
 def load_glaive(tokenizer, cfg, ds_cfg: Optional[Dict[str, Any]] = None):
     conversation = (
-        ds_cfg["conversation"]
-        if ds_cfg and "conversation" in ds_cfg
-        else "chatml_glaive"
+        ds_cfg["conversation"] if ds_cfg and "conversation" in ds_cfg else None
     )
     return GlaiveShareGPTPromptTokenizingStrategy(
-        ShareGPTPrompterV2(conversation=conversation),
+        ShareGPTPrompterV2(
+            conversation=conversation,
+            roles={
+                "user": "<|im_start|>user",
+                "assistant": "<|im_start|>assistant",
+                "tool": "<|im_start|>tool",
+            },
+            role_key_tool="tool",
+        ),
         tokenizer,
         cfg.train_on_inputs,
         cfg.sequence_len,

@@ -261,7 +261,6 @@ SHAREGPT_ASSERTION_FAILED_ROLE = (
 
 CONVERSATION_ROLE_FORMAT = {
     "chatml": "<|im_start|>{ROLE}",
-    "chatml_glaive": "<|im_start|>{ROLE}",
     "zephyr": "<|{ROLE}|>",
     "vicuna_v1.1": "{ROLE}",
 }
@@ -378,12 +377,14 @@ class ShareGPTPrompterV2(ShareGPTPrompter):
         conversation: Optional[Union[str, Conversation]] = None,
         role_key_human: Optional[str] = None,
         role_key_model: Optional[str] = None,
+        role_key_tool: Optional[str] = None,
         roles: Optional[dict] = None,
     ):
         super().__init__(
             conversation=conversation,
             role_key_human=role_key_human,
             role_key_model=role_key_model,
+            role_key_tool=role_key_tool,
             roles=roles,
         )
 
