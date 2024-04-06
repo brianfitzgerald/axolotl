@@ -16,6 +16,7 @@ import torch.distributed as dist
 import wandb
 from datasets import load_dataset
 from optimum.bettertransformer import BetterTransformer
+from tabulate import tabulate
 from tqdm import tqdm
 from transformers import (
     GenerationConfig,
@@ -339,9 +340,9 @@ def bench_eval_callback_factory(trainer, tokenizer):
                     bench_refs.extend(combined_bench_names[bench_name]["refs"])
                     bench_preds.extend(combined_bench_names[bench_name]["preds"])
                     if not pd.isna(bench_score):
-                        results[
-                            f"{bench_split}_bench_accuracy_{bench_name}"
-                        ] = bench_score
+                        results[f"{bench_split}_bench_accuracy_{bench_name}"] = (
+                            bench_score
+                        )
                         bench_scores.append(bench_score)
                     else:
                         results[f"{bench_split}_bench_accuracy_{bench_name}"] = 0.0
@@ -540,7 +541,7 @@ def causal_lm_bench_eval_callback_factory(trainer: Trainer, tokenizer):
     return CausalLMBenchEvalCallback
 
 
-def log_prediction_callback_factory(trainer: Trainer, tokenizer):
+def log_prediction_callback_factory(trainer: Trainer, tokenizer, use_wandb: bool):
     class LogPredictionCallback(TrainerCallback):
         """Callback to log prediction values during each evaluation"""
 
@@ -597,15 +598,17 @@ def log_prediction_callback_factory(trainer: Trainer, tokenizer):
                 return ranges
 
             def log_table_from_dataloader(name: str, table_dataloader):
-                table = wandb.Table(  # type: ignore[attr-defined]
-                    columns=[
-                        "id",
-                        "Prompt",
-                        "Correct Completion",
-                        "Predicted Completion (model.generate)",
-                        "Predicted Completion (trainer.prediction_step)",
-                    ]
-                )
+                table = None
+                if use_wandb:
+                    table = wandb.Table(  # type: ignore[attr-defined]
+                        columns=[
+                            "id",
+                            "Prompt",
+                            "Correct Completion",
+                            "Predicted Completion (model.generate)",
+                            "Predicted Completion (trainer.prediction_step)",
+                        ]
+                    )
                 row_index = 0
 
                 for batch in tqdm(table_dataloader):
@@ -701,24 +704,52 @@ def log_prediction_callback_factory(trainer: Trainer, tokenizer):
                         prediction_without_prompt_tokens_list, skip_special_tokens=True
                     )
 
-                    for (
-                        prompt_text,
-                        completion_text,
-                        prediction_text,
-                        pred_step_text,
-                    ) in zip(
-                        prompt_texts, completion_texts, predicted_texts, pred_step_texts
-                    ):
-                        table.add_data(
-                            row_index,
+                    row_wise_samples = [
+                        list(row)
+                        for row in zip(
+                            *prompt_texts,
+                            completion_texts,
+                            predicted_texts,
+                            pred_step_texts,
+                        )
+                    ]
+                    print(
+                        tabulate(
+                            row_wise_samples,
+                            headers=[
+                                "Prompt",
+                                "Correct Completion",
+                                "Predicted Completion (model.generate)",
+                                "Predicted Completion (trainer.prediction_step)",
+                            ],
+                            maxcolwidths=[50, 50, 50, 50],
+                        )
+                    )
+
+                    if use_wandb:
+                        assert table, "table should not be None"
+                        for (
                             prompt_text,
                             completion_text,
                             prediction_text,
                             pred_step_text,
-                        )
-                        row_index += 1
+                        ) in zip(
+                            prompt_texts,
+                            completion_texts,
+                            predicted_texts,
+                            pred_step_texts,
+                        ):
+                            table.add_data(
+                                row_index,
+                                prompt_text,
+                                completion_text,
+                                prediction_text,
+                                pred_step_text,
+                            )
+                            row_index += 1
 
-                wandb.run.log({f"{name} - Predictions vs Ground Truth": table})  # type: ignore[attr-defined]
+                if use_wandb:
+                    wandb.run.log({f"{name} - Predictions vs Ground Truth": table})  # type: ignore[attr-defined]
 
             if is_main_process():
                 log_table_from_dataloader("Eval", eval_dataloader)
@@ -748,7 +779,7 @@ class SaveAxolotlConfigtoWandBCallback(TrainerCallback):
                     mode="w", delete=False, suffix=".yml", prefix="axolotl_config_"
                 ) as temp_file:
                     copyfile(self.axolotl_config_path, temp_file.name)
-                    wandb.save(temp_file.name)
+                    wandb.save(temp_file.name)  # type: ignore
                 LOG.info(
                     "The Axolotl config has been saved to the WandB run under files."
                 )

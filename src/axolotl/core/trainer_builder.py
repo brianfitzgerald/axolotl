@@ -931,9 +931,10 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
 
     def get_post_trainer_create_callbacks(self, trainer):
         callbacks = []
-        if self.cfg.use_wandb and self.cfg.eval_table_size > 0:
+        if self.cfg.eval_table_size > 0:
+            use_wandb = self.cfg.use_wandb is True
             LogPredictionCallback = log_prediction_callback_factory(
-                trainer, self.tokenizer
+                trainer, self.tokenizer, use_wandb
             )
             callbacks.append(LogPredictionCallback(self.cfg))
 
