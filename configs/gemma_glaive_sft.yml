@@ -42,10 +42,10 @@ pad_to_sequence_len: true
 
 gradient_accumulation_steps: 2
 micro_batch_size: 4
-num_epochs: 25
+num_epochs: 1
 optimizer: adamw_bnb_8bit
 lr_scheduler: linear
-learning_rate: 5e-5
+learning_rate: 2e-4
 warmup_steps: 10
 weight_decay: 0.0
 

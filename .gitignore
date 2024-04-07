@@ -177,3 +177,5 @@ mlruns/*
 prepared-datasets/
 submit.sh
 *.out*
+
+typings/
