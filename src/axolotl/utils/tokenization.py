@@ -56,11 +56,13 @@ def chatml_to_conversation(row: Dict[str, str]) -> List[Dict[str, str]]:
     Initially based off https://github.com/lilacai/lilac/blob/main/notebooks/GlaiveToShareGPT.ipynb.
     """
 
-    system_prompt = row.get("system")
+    system_prompt: str = row.get("system", "")
+    system_prompt = system_prompt.strip().replace("\n", "")
     if system_prompt:
         system_prompt = system_prompt.removeprefix("SYSTEM: ")
 
-    chat_str = row["chat"]
+    chat_str: str = row.get("chat", "")
+    chat_str = chat_str.strip().replace("\n", "")
     chat_msgs = [s.strip() for s in GLAIVE_MSG_REGEX.split(chat_str) if s]
 
     chat_msg_dicts = [
