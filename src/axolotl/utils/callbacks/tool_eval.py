@@ -28,8 +28,6 @@ def extract_json_fn_call(msg: str) -> Optional[Dict]:
     except json.JSONDecodeError as exc:
         return json.loads(msg[: exc.pos])
 
-    return None
-
 
 class FunctionCallAccuracy(evaluate.Metric):
     """
