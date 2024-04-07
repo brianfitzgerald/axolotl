@@ -16,7 +16,7 @@ datasets:
   - path: glaiveai/glaive-function-calling-v2
     type: sharegpt.load_glaive
     split: train
-    conversation: chatml_glaive
+    conversation: gemma_glaive
 
 val_set_size: 100
 

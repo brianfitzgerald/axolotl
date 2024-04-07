@@ -22,7 +22,7 @@ def register_chatml_template(system_message=None):
             name="chatml",
             system_template="<|im_start|>system\n{system_message}",
             system_message=system_message,
-            roles=["<|im_start|>user", "<|im_start|>assistant"],
+            roles=("<|im_start|>user", "<|im_start|>assistant"),
             sep_style=SeparatorStyle.CHATML,
             sep="<|im_end|>",
         )
@@ -32,9 +32,24 @@ def register_chatml_template(system_message=None):
             name="chatml_glaive",
             system_template="<|im_start|>system\n{system_message}",
             system_message=system_message,
-            roles=["<|im_start|>user", "<|im_start|>assistant", "<|im_start|>tool"],
+            roles=("<|im_start|>user", "<|im_start|>assistant", "<|im_start|>tool"),
             sep_style=SeparatorStyle.CHATML,
             sep="<|im_end|>",
+        )
+    )
+    register_conv_template(
+        Conversation(
+            name="gemma_glaive",
+            system_template="<start_of_turn>system\n{system_message}",
+            system_message=system_message,
+            roles=(
+                "<start_of_turn>user\n",
+                "<start_of_turn>assistant\n",
+                "<start_of_turn>tool\n",
+            ),
+            sep_style=SeparatorStyle.NO_COLON_SINGLE,
+            sep="<end_of_turn>\n",
+            stop_str="<end_of_turn>",
         )
     )
 
@@ -99,7 +114,9 @@ def load_guanaco(tokenizer, cfg):
 
 def load_glaive(tokenizer, cfg, ds_cfg: Optional[Dict[str, Any]] = None):
     conversation = (
-        ds_cfg["conversation"] if ds_cfg and "conversation" in ds_cfg else None
+        ds_cfg["conversation"]
+        if ds_cfg and "conversation" in ds_cfg
+        else "chatml_glaive"
     )
     return GlaiveShareGPTPromptTokenizingStrategy(
         ShareGPTPrompterV2(

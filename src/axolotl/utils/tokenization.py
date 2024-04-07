@@ -48,6 +48,7 @@ GLAIVE_TO_SHAREGPT_ROLE = {
 }
 
 GLAIVE_MSG_REGEX = re.compile(rf"({'|'.join(GLAIVE_ROLES)}): ")
+CHATML_REGEX = re.compile(r"(<\|im_start\|>|<\|im_end\|>|<\|endoftext\|>)")
 
 
 def chatml_to_conversation(row: Dict[str, str]) -> List[Dict[str, str]]:
@@ -63,6 +64,7 @@ def chatml_to_conversation(row: Dict[str, str]) -> List[Dict[str, str]]:
 
     chat_str: str = row.get("chat", "")
     chat_str = chat_str.strip().replace("\n", "")
+    chat_str = CHATML_REGEX.sub("", chat_str)
     chat_msgs = [s.strip() for s in GLAIVE_MSG_REGEX.split(chat_str) if s]
 
     chat_msg_dicts = [
