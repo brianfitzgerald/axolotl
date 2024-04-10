@@ -40,7 +40,7 @@ WRONG_PARAMETERS = {
 SYSTEM: You are a helpful assistant with access to the following functions. Use them if required - { "name": "calculate_loan_payment", "description": "Calculate the monthly loan payment", "parameters": { "type": "object", "properties": { "principal": { "type": "number", "description": "The principal amount of the loan" }, "interest_rate": { "type": "number", "description": "The annual interest rate of the loan" }, "loan_term": { "type": "integer", "description": "The loan term in years" } }, "required": [ "principal", "interest_rate", "loan_term" ] } }
 """,
     "chat": """
-USER: Hi, I need help with calculating my loan payment. ASSISTANT: Of course, I can help with that. Could you please provide me with the principal amount of the loan, the annual interest rate, and the loan term in years? <|endoftext|> USER: Sure, the principal amount is $50000, the annual interest rate is 5%, and the loan term is 10 years. ASSISTANT: <functioncall> {"name": "generate_loan", "arguments": '{"base_amount": 50000, "rate": 5, "loan_term": 4}'} <|endoftext|> FUNCTION RESPONSE: {"monthly_payment": "$530.33"} ASSISTANT: Based on the information you provided, your monthly loan payment would be $530.33. <|endoftext|>
+USER: Hi, I need help with calculating my loan payment. ASSISTANT: <functioncall> {"name": "generate_loan", "arguments": '{"base_amount": 50000, "rate": 5, "loan_term": 4}'} <|endoftext|> FUNCTION RESPONSE: {"monthly_payment": "$530.33"} ASSISTANT: Based on the information you provided, your monthly loan payment would be $530.33. <|endoftext|>
 """,
 }
 
