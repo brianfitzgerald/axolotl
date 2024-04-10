@@ -16,22 +16,32 @@ SYSTEM: You are a helpful assistant with access to the following functions. Use 
     "chat": """
 USER: Can you book a flight for me from New York to London? ASSISTANT: I'm sorry, but I don't have the capability to book flights. My current function allows me to get the exchange rate between two currencies. If you need help with that, feel free to ask! <|endoftext|>
 """,
+    "expected": """
+USER: Can you book a flight for me from New York to London? ASSISTANT: I'm sorry, but I don't have the capability to book flights. My current function allows me to get the exchange rate between two currencies. If you need help with that, feel free to ask! <|endoftext|>
+""",
 }
+
 FN_AVAILABLE = {
     "system": """
 SYSTEM: You are a helpful assistant with access to the following functions. Use them if required - { "name": "calculate_loan_payment", "description": "Calculate the monthly loan payment", "parameters": { "type": "object", "properties": { "principal": { "type": "number", "description": "The principal amount of the loan" }, "interest_rate": { "type": "number", "description": "The annual interest rate of the loan" }, "loan_term": { "type": "integer", "description": "The loan term in years" } }, "required": [ "principal", "interest_rate", "loan_term" ] } }
 """,
     "chat": """
-USER: Hi, I need help with calculating my loan payment. ASSISTANT: Of course, I can help with that. Could you please provide me with the principal amount of the loan, the annual interest rate, and the loan term in years? <|endoftext|> USER: Sure, the principal amount is $50000, the annual interest rate is 5%, and the loan term is 10 years. ASSISTANT: <functioncall> {"name": "calculate_loan_payment", "arguments": '{"principal": 50000, "interest_rate": 5, "loan_term": 10}'} <|endoftext|> FUNCTION RESPONSE: {"monthly_payment": "$530.33"} ASSISTANT: Based on the information you provided, your monthly loan payment would be $530.33. <|endoftext|>
+USER: Hi, I need help with calculating my loan payment. ASSISTANT: <functioncall> {"name": "calculate_loan_payment", "arguments": '{"principal": 50000, "interest_rate": 5, "loan_term": 4}'}
+""",
+    "expected": """
+USER: Hi, I need help with calculating my loan payment. ASSISTANT: <functioncall> {"name": "calculate_loan_payment", "arguments": '{"principal": 50000, "interest_rate": 5, "loan_term": 4}'}
 """,
 }
 
-WRONG_FN = {
+WRONG_FN_NAME = {
     "system": """
 SYSTEM: You are a helpful assistant with access to the following functions. Use them if required - { "name": "calculate_loan_payment", "description": "Calculate the monthly loan payment", "parameters": { "type": "object", "properties": { "principal": { "type": "number", "description": "The principal amount of the loan" }, "interest_rate": { "type": "number", "description": "The annual interest rate of the loan" }, "loan_term": { "type": "integer", "description": "The loan term in years" } }, "required": [ "principal", "interest_rate", "loan_term" ] } }
 """,
     "chat": """
-USER: Hi, I need help with calculating my loan payment. ASSISTANT: Of course, I can help with that. Could you please provide me with the principal amount of the loan, the annual interest rate, and the loan term in years? <|endoftext|> USER: Sure, the principal amount is $50000, the annual interest rate is 5%, and the loan term is 10 years. ASSISTANT: <functioncall> {"name": "generate_loan", "arguments": '{"principal": 50000, "interest_rate": 5, "loan_term": 10}'} <|endoftext|> FUNCTION RESPONSE: {"monthly_payment": "$530.33"} ASSISTANT: Based on the information you provided, your monthly loan payment would be $530.33. <|endoftext|>
+USER: Hi, I need help with calculating my loan payment. ASSISTANT: <functioncall> {"name": "calculate_loan_payment", "arguments": '{"base_amount": 50000, "rate": 5, "loan_term": 4}'}
+""",
+    "expected": """
+USER: Hi, I need help with calculating my loan payment. ASSISTANT: <functioncall> {"name": "get_loan", "arguments": '{"principal": 50000, "interest_rate": 5, "loan_term": 4}'}
 """,
 }
 
@@ -40,7 +50,10 @@ WRONG_PARAMETERS = {
 SYSTEM: You are a helpful assistant with access to the following functions. Use them if required - { "name": "calculate_loan_payment", "description": "Calculate the monthly loan payment", "parameters": { "type": "object", "properties": { "principal": { "type": "number", "description": "The principal amount of the loan" }, "interest_rate": { "type": "number", "description": "The annual interest rate of the loan" }, "loan_term": { "type": "integer", "description": "The loan term in years" } }, "required": [ "principal", "interest_rate", "loan_term" ] } }
 """,
     "chat": """
-USER: Hi, I need help with calculating my loan payment. ASSISTANT: <functioncall> {"name": "generate_loan", "arguments": '{"base_amount": 50000, "rate": 5, "loan_term": 4}'} <|endoftext|> FUNCTION RESPONSE: {"monthly_payment": "$530.33"} ASSISTANT: Based on the information you provided, your monthly loan payment would be $530.33. <|endoftext|>
+USER: Hi, I need help with calculating my loan payment. ASSISTANT: <functioncall> {"name": "calculate_loan_payment", "arguments": '{"base_amount": 50000, "rate": 5, "loan_term": 4}'}
+""",
+    "expected": """
+USER: Hi, I need help with calculating my loan payment. ASSISTANT: <functioncall> {"name": "get_loan", "arguments": '{"base_amount": 50000, "rate": 5, "loan_term": 4}'}
 """,
 }
 
@@ -50,31 +63,35 @@ def metric():
     return FunctionCallAccuracy()
 
 
-def _assert_conversation(metric, conversation):
-    conversation = chatml_to_conversation(NO_FN_AVAILABLE)
-    system_msg = conversation[0]["value"]
-    last_msg = conversation[-1]["value"]
+def _assert_conversation(metric, conversation, choice_acc, param_acc):
+    system_msg = chatml_to_conversation(conversation["system"], "system")[-1]["value"]
+    last_msg = chatml_to_conversation(conversation["chat"], "chat")[-1]["value"]
+    expected = chatml_to_conversation(conversation["expected"], "chat")[-1]["value"]
 
-    metric.add_batch(system_messages=[system_msg], function_call_messages=[last_msg])
+    metric.add_batch(
+        system_messages=[system_msg],
+        expected_messages=[expected],
+        generated_messages=[last_msg],
+    )
 
     values = metric.compute()
 
     assert values, "No values returned"
-    assert values["function_choice_accuracy"] == 1
-    assert values["parameter_accuracy"] == 1
+    assert values["function_choice_accuracy"] == choice_acc
+    assert values["parameter_accuracy"] == param_acc
 
 
 def test_no_fn_available(metric):
-    _assert_conversation(metric, NO_FN_AVAILABLE)
+    _assert_conversation(metric, NO_FN_AVAILABLE, 0, 0)
 
 
 def test_fn_available(metric):
-    _assert_conversation(metric, FN_AVAILABLE)
+    _assert_conversation(metric, FN_AVAILABLE, 0, 0)
 
 
 def test_wrong_fn(metric):
-    _assert_conversation(metric, WRONG_FN)
+    _assert_conversation(metric, WRONG_FN_NAME, 0, 0)
 
 
 def test_wrong_parameters(metric):
-    _assert_conversation(metric, WRONG_PARAMETERS)
+    _assert_conversation(metric, WRONG_PARAMETERS, 0, 0)
