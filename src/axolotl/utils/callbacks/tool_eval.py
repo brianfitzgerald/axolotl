@@ -1,6 +1,7 @@
 """
 FunctionCallAccuracy metric, used for evaluating the accuracy of the model's choice of function to call and its parameters.
 """
+
 import json
 import statistics
 from typing import Dict, List, Optional
@@ -43,26 +44,37 @@ class FunctionCallAccuracy(evaluate.Metric):
                 {
                     "system_messages": datasets.Value("string"),
                     "function_call_messages": datasets.Value("string"),
+                    "generated_messages": datasets.Value("string"),
                 }
             ),
         )
 
     def _compute(
-        self, system_messages: List[str], function_call_messages: List[str]
+        self,
+        system_messages: List[str],
+        expected_messages: List[str],
+        generated_messages: List[str],
     ) -> Dict[str, float]:
         fn_name_accuracies, fn_param_accuracies = [], []
-        for system_message, function_call_message in zip(
-            system_messages, function_call_messages
+        for system_message, expected_message, generated_message in zip(
+            system_messages, expected_messages, generated_messages
         ):
             system_fn_call = extract_json_fn_call(system_message)
-            execution_fn_call = extract_json_fn_call(function_call_message)
+            expected_fn_call = extract_json_fn_call(expected_message)
+            execution_fn_call = extract_json_fn_call(generated_message)
 
-            # If either function call is not available, return 1 accuracy
-            if not system_fn_call or not execution_fn_call:
-                return {"function_choice_accuracy": 1, "parameter_accuracy": 1}
+            # If a function call is expected but missing, return 0 accuracy
+            if bool(system_fn_call) != bool(execution_fn_call):
+                fn_param_accuracies.append(0.0)
+                fn_name_accuracies.append(0.0)
+                continue
+
+            # if we don't have fn calls for all 3 messages, skip
+            if not system_fn_call or not execution_fn_call or not expected_fn_call:
+                continue
 
             fn_name_accuracy = (
-                1 if system_fn_call["name"] == execution_fn_call["name"] else 0
+                1 if expected_fn_call["name"] == execution_fn_call["name"] else 0
             )
             total_params, correct_params = 0, 0
             for key in system_fn_call["parameters"]:
