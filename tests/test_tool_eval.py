@@ -5,7 +5,7 @@ Test classes for checking functionality of the cfg normalization
 
 from pytest import fixture
 
-from axolotl.utils.callbacks.tool_eval import FunctionCallAccuracy
+from axolotl.utils.callbacks.tool_eval import FunctionCallAccuracy, extract_json_fn_call
 from axolotl.utils.tokenization import chatml_to_conversation
 
 # tuple of (system, user) chat samples
@@ -41,7 +41,7 @@ SYSTEM: You are a helpful assistant with access to the following functions. Use 
 USER: Hi, I need help with calculating my loan payment. ASSISTANT: <functioncall> {"name": "calculate_loan_payment", "arguments": '{"base_amount": 50000, "rate": 5, "loan_term": 4}'}
 """,
     "expected": """
-USER: Hi, I need help with calculating my loan payment. ASSISTANT: <functioncall> {"name": "get_loan", "arguments": '{"principal": 50000, "interest_rate": 5, "loan_term": 4}'}
+USER: Hi, I need help with calculating my loan payment. ASSISTANT: <functioncall> {"name": "get_loan", "arguments":  "arguments": '{"base_amount": 50000, "rate": 5, "loan_term": 4}'}
 """,
 }
 
@@ -81,12 +81,18 @@ def _assert_conversation(metric, conversation, choice_acc, param_acc):
     assert values["parameter_accuracy"] == param_acc
 
 
+def test_json_parse():
+    prompt = FN_AVAILABLE["chat"]
+    parsed = extract_json_fn_call(prompt)
+    assert isinstance(parsed, dict)
+
+
 def test_no_fn_available(metric):
     _assert_conversation(metric, NO_FN_AVAILABLE, 0, 0)
 
 
 def test_fn_available(metric):
-    _assert_conversation(metric, FN_AVAILABLE, 0, 0)
+    _assert_conversation(metric, FN_AVAILABLE, 1, 1)
 
 
 def test_wrong_fn(metric):

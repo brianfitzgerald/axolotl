@@ -5,7 +5,7 @@ FunctionCallAccuracy metric, used for evaluating the accuracy of the model's cho
 import json
 import re
 import statistics
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Union
 
 import datasets
 import evaluate
@@ -20,40 +20,30 @@ Returns:
 """
 
 
-pattern = r"{.*}"
+JSON_MATCH_PATTERN = r"{.*}"
 
 
-def parse_json_string(value) -> Optional[Dict]:
-    """
-    Recursively parse a string that may contain JSON content.
-    """
-    try:
-        print("value:", value)
-        json_obj = json.loads(value)
-        print("type", type(json_obj))
-        if isinstance(json_obj, dict):
-            return {
-                k: parse_json_string(v) if isinstance(v, str) else v
-                for k, v in json_obj.items()
-            }
-        elif isinstance(json_obj, list):
-            # If it's a list, apply the logic to each item
-            return [parse_json_string(item) if isinstance(item, str) else item for item in json_obj]  # type: ignore
-        else:
-            return json_obj
-    except json.JSONDecodeError:
-        return value
+def recursive_json_parse(data: str) -> Optional[Union[Dict, str]]:
+    if isinstance(data, str):
+        try:
+            data = json.loads(data)
+        except json.JSONDecodeError:
+            return data
+
+    if isinstance(data, dict):
+        return {key: recursive_json_parse(value) for key, value in data.items()}
+    return data
 
 
 def extract_json_fn_call(msg: str) -> Optional[Dict]:
-    match = re.search(pattern, msg)
+    msg = msg.replace("'", "").replace("\n", "")
+    match = re.search(JSON_MATCH_PATTERN, msg)
 
     if match:
         json_str = match.group(0)
-        json_obj = parse_json_string(json_str)
-        return json_obj
-    else:
-        return None
+        json_obj = recursive_json_parse(json_str)
+        return json_obj  # type: ignore
+    return None
 
 
 class FunctionCallAccuracy(evaluate.Metric):
@@ -112,12 +102,21 @@ class FunctionCallAccuracy(evaluate.Metric):
             fn_name_accuracy = (
                 1 if expected_fn_call["name"] == execution_fn_call["name"] else 0
             )
+
+            system_fn_call_arguments = system_fn_call["parameters"]["properties"]
+            expected_args = expected_fn_call["arguments"]
+            execution_args = execution_fn_call["arguments"]
+
             total_params, correct_params = 0, 0
-            for key in system_fn_call["parameters"]:
+            # TODO validate that required params are present
+            # TODO validate type as well
+            for key in system_fn_call_arguments:
                 total_params += 1
                 if (
-                    system_fn_call["parameters"][key]
-                    == execution_fn_call["arguments"][key]
+                    key in system_fn_call_arguments
+                    and key in expected_args
+                    and key in execution_args
+                    and expected_args[key] == execution_args[key]
                 ):
                     correct_params += 1
             fn_param_accuracy = correct_params / total_params if total_params > 0 else 0
