@@ -68,3 +68,5 @@ eval_max_new_tokens: 64
 do_causal_lm_eval: true
 special_tokens:
   additional_special_tokens: ["<functioncall>"]
+
+eval_causal_lm_metrics: ["tool_use_json"]

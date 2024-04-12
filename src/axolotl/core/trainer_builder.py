@@ -939,17 +939,19 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
     def get_post_trainer_create_callbacks(self, trainer):
         callbacks = []
         if self.cfg.eval_table_size > 0:
-            LogPredictionCallback = log_prediction_callback_factory(
-                trainer, self.tokenizer, "wandb"
+            logger = (
+                "wandb"
+                if self.cfg.use_wandb
+                else "mlflow"
+                if self.cfg.use_mlflow
+                else ""
             )
-            callbacks.append(LogPredictionCallback(self.cfg))
-        if (
-            self.cfg.use_mlflow
-            and is_mlflow_available()
-            and self.cfg.eval_table_size > 0
-        ):
+            if logger == "mlflow" and not is_mlflow_available():
+                raise ValueError(
+                    "MLflow is not installed. Please install mlflow to use this feature."
+                )
             LogPredictionCallback = log_prediction_callback_factory(
-                trainer, self.tokenizer, "mlflow"
+                trainer, self.tokenizer, logger
             )
             callbacks.append(LogPredictionCallback(self.cfg))
 

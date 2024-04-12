@@ -31,6 +31,7 @@ from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR, IntervalStrategy
 
 from axolotl.utils import is_mlflow_available
 from axolotl.utils.bench import log_gpu_memory_usage
+from axolotl.utils.callbacks.tool_eval import FunctionCallAccuracy
 from axolotl.utils.config.models.input.v0_4_1 import AxolotlInputConfig
 from axolotl.utils.distributed import (
     barrier,
@@ -375,6 +376,8 @@ def causal_lm_bench_eval_callback_factory(trainer: Trainer, tokenizer):
         def __maybe_load_metrics(self):
             metrics = {}
             for metric in self.cfg.eval_causal_lm_metrics:
+                if metric == "tool_use_json":
+                    metrics[metric] = FunctionCallAccuracy()
                 try:
                     metrics[metric] = evaluate.load(metric)
                 except Exception as exc:  # pylint: disable=broad-exception-caught
