@@ -58,24 +58,21 @@ class FunctionCallAccuracy(evaluate.Metric):
             inputs_description=_KWARGS_DESCRIPTION,
             features=datasets.Features(
                 {
-                    "system_messages": datasets.Value("string"),
-                    "expected_messages": datasets.Value("string"),
-                    "generated_messages": datasets.Value("string"),
+                    "references": datasets.Value("string"),
+                    "predictions": datasets.Value("string"),
                 }
             ),
         )
 
     def _compute(
         self,
-        system_messages: List[str],
-        expected_messages: List[str],
-        generated_messages: List[str],
+        references: List[str],
+        predictions: List[str],
     ) -> Dict[str, float]:
         fn_name_accuracies, fn_param_accuracies = [], []
-        for system_message, expected_message, generated_message in zip(
-            system_messages, expected_messages, generated_messages
-        ):
-            system_fn_call = extract_json_fn_call(system_message)
+        for expected_message, generated_message in zip(references, predictions):
+            # system_fn_call = extract_json_fn_call(system_message)
+            system_fn_call = {}
             expected_fn_call = extract_json_fn_call(expected_message)
             execution_fn_call = extract_json_fn_call(generated_message)
 
@@ -124,7 +121,8 @@ class FunctionCallAccuracy(evaluate.Metric):
             fn_param_accuracies.append(fn_param_accuracy)
             fn_name_accuracies.append(fn_name_accuracy)
 
+        fn_choice_accuracy = statistics.mean(fn_name_accuracies)
+        parameter_accuracy = statistics.mean(fn_param_accuracies)
         return {
-            "function_choice_accuracy": statistics.mean(fn_name_accuracies),
-            "parameter_accuracy": statistics.mean(fn_param_accuracies),
+            "mean_score": (fn_choice_accuracy + parameter_accuracy) / 2,
         }

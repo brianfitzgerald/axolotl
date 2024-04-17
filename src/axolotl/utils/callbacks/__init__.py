@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+import traceback
 from shutil import copyfile
 from tempfile import NamedTemporaryFile
 from typing import TYPE_CHECKING, Any, Dict, List
@@ -378,10 +379,11 @@ def causal_lm_bench_eval_callback_factory(trainer: Trainer, tokenizer):
             for metric in self.cfg.eval_causal_lm_metrics:
                 if metric == "tool_use_json":
                     metrics[metric] = FunctionCallAccuracy()
-                try:
-                    metrics[metric] = evaluate.load(metric)
-                except Exception as exc:  # pylint: disable=broad-exception-caught
-                    LOG.warning(f"{metric}: {exc.args}")
+                else:
+                    try:
+                        metrics[metric] = evaluate.load(metric)
+                    except Exception as exc:  # pylint: disable=broad-exception-caught
+                        LOG.warning(f"{metric}: {exc.args}")
             return metrics
 
         def on_evaluate(
@@ -425,13 +427,27 @@ def causal_lm_bench_eval_callback_factory(trainer: Trainer, tokenizer):
                 # safely compute a metric and return the score if the format is correct
                 metric_score = None
                 try:
-                    metric_score = metric.compute(**kwargs)
+                    features = {}
+                    if isinstance(metric.info.features, dict):
+                        features = metric.info.features
+                    elif isinstance(metric.info.features, list):
+                        for feature in metric.info.features:
+                            features.update(feature)
+                    metric_kwargs = {k: kwargs[k] for k in features if k in kwargs}
+                    print(
+                        "metric args",
+                        features.keys(),
+                        kwargs.keys(),
+                        metric_kwargs.keys(),
+                    )
+                    metric_score = metric.compute(**metric_kwargs)
                     return (
                         metric_score["score"]
                         if "score" in metric_score
                         else metric_score["mean_score"]
                     )
-                except Exception:  # pylint: disable=broad-exception-caught
+                except Exception as e:  # pylint: disable=broad-exception-caught
+                    traceback.print_exc()
                     LOG.debug(
                         f"Failed to compute metric {metric.name} with kwargs {kwargs.keys()}"
                     )
