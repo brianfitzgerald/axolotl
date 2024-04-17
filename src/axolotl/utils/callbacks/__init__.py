@@ -434,19 +434,14 @@ def causal_lm_bench_eval_callback_factory(trainer: Trainer, tokenizer):
                         for feature in metric.info.features:
                             features.update(feature)
                     metric_kwargs = {k: kwargs[k] for k in features if k in kwargs}
-                    print(
-                        "metric args",
-                        features.keys(),
-                        kwargs.keys(),
-                        metric_kwargs.keys(),
-                    )
+                    breakpoint()
                     metric_score = metric.compute(**metric_kwargs)
                     return (
                         metric_score["score"]
                         if "score" in metric_score
                         else metric_score["mean_score"]
                     )
-                except Exception as e:  # pylint: disable=broad-exception-caught
+                except Exception:  # pylint: disable=broad-exception-caught
                     traceback.print_exc()
                     LOG.debug(
                         f"Failed to compute metric {metric.name} with kwargs {kwargs.keys()}"

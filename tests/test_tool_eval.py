@@ -63,22 +63,21 @@ def metric():
     return FunctionCallAccuracy()
 
 
-def _assert_conversation(metric, conversation, choice_acc, param_acc):
+def _assert_conversation(metric, conversation, score):
     system_msg = chatml_to_conversation(conversation["system"], "system")[-1]["value"]
     last_msg = chatml_to_conversation(conversation["chat"], "chat")[-1]["value"]
     expected = chatml_to_conversation(conversation["expected"], "chat")[-1]["value"]
+    predictions = system_msg + last_msg
 
     metric.add_batch(
-        system_messages=[system_msg],
-        expected_messages=[expected],
-        generated_messages=[last_msg],
+        references=[expected],
+        predictions=[predictions],
     )
 
     values = metric.compute()
 
     assert values, "No values returned"
-    assert values["function_choice_accuracy"] == choice_acc
-    assert values["parameter_accuracy"] == param_acc
+    assert values["score"] == score
 
 
 def test_json_parse():
@@ -88,16 +87,16 @@ def test_json_parse():
 
 
 def test_no_fn_available(metric):
-    _assert_conversation(metric, NO_FN_AVAILABLE, 0, 0)
+    _assert_conversation(metric, NO_FN_AVAILABLE, 0)
 
 
 def test_fn_available(metric):
-    _assert_conversation(metric, FN_AVAILABLE, 1, 1)
+    _assert_conversation(metric, FN_AVAILABLE, 1)
 
 
 def test_wrong_fn(metric):
-    _assert_conversation(metric, WRONG_FN_NAME, 0, 0)
+    _assert_conversation(metric, WRONG_FN_NAME, 0)
 
 
 def test_wrong_parameters(metric):
-    _assert_conversation(metric, WRONG_PARAMETERS, 0, 0)
+    _assert_conversation(metric, WRONG_PARAMETERS, 0)

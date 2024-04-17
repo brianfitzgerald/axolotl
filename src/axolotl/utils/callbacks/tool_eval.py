@@ -71,7 +71,6 @@ class FunctionCallAccuracy(evaluate.Metric):
     ) -> Dict[str, float]:
         fn_name_accuracies, fn_param_accuracies = [], []
         for expected_message, generated_message in zip(references, predictions):
-            # system_fn_call = extract_json_fn_call(system_message)
             system_fn_call = {}
             expected_fn_call = extract_json_fn_call(expected_message)
             execution_fn_call = extract_json_fn_call(generated_message)
@@ -124,5 +123,5 @@ class FunctionCallAccuracy(evaluate.Metric):
         fn_choice_accuracy = statistics.mean(fn_name_accuracies)
         parameter_accuracy = statistics.mean(fn_param_accuracies)
         return {
-            "mean_score": (fn_choice_accuracy + parameter_accuracy) / 2,
+            "score": (fn_choice_accuracy + parameter_accuracy) / 2,
         }
