@@ -44,6 +44,7 @@ Features:
 - Advanced Topics
   - [Multipack](./docs/multipack.qmd)<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M17 13.5v6H5v-12h6m3-3h6v6m0-6-9 9" class="icon_svg-stroke" stroke="#666" stroke-width="1.5" fill="none" fill-rule="evenodd" stroke-linecap="round" stroke-linejoin="round"></path></svg>
   - [RLHF & DPO](./docs/rlhf.qmd)<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M17 13.5v6H5v-12h6m3-3h6v6m0-6-9 9" class="icon_svg-stroke" stroke="#666" stroke-width="1.5" fill="none" fill-rule="evenodd" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+  - [Dataset Pre-Processing](./docs/dataset_preprocessing.qmd)<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M17 13.5v6H5v-12h6m3-3h6v6m0-6-9 9" class="icon_svg-stroke" stroke="#666" stroke-width="1.5" fill="none" fill-rule="evenodd" stroke-linecap="round" stroke-linejoin="round"></path></svg>
 - [Common Errors](#common-errors-)
   - [Tokenization Mismatch b/w Training & Inference](#tokenization-mismatch-bw-inference--training)
 - [Debugging Axolotl](#debugging-axolotl)
@@ -81,6 +82,7 @@ Features:
 | llama       | ✅         | ✅    | ✅     | ✅             | ✅                 | ✅          | ✅            |
 | Mistral     | ✅         | ✅    | ✅     | ✅             | ✅                 | ✅          | ✅            |
 | Mixtral-MoE | ✅         | ✅    | ✅     | ❓             | ❓                 | ❓          | ❓            |
+| Mixtral8X22 | ✅         | ✅    | ✅     | ❓             | ❓                 | ❓          | ❓            |
 | Pythia      | ✅         | ✅    | ✅     | ❌             | ❌                 | ❌          | ❓            |
 | cerebras    | ✅         | ✅    | ✅     | ❌             | ❌                 | ❌          | ❓            |
 | btlm        | ✅         | ✅    | ✅     | ❌             | ❌                 | ❌          | ❓            |
@@ -425,7 +427,7 @@ deepspeed: deepspeed_configs/zero1.json
 ```
 
 ```shell
-accelerate launch -m axolotl.cli.train examples/llama-2/config.py --deepspeed deepspeed_configs/zero1.json
+accelerate launch -m axolotl.cli.train examples/llama-2/config.yml --deepspeed deepspeed_configs/zero1.json
 ```
 
 ##### FSDP
