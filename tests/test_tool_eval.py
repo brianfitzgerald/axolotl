@@ -67,11 +67,9 @@ def _assert_conversation(metric, conversation, score):
     system_msg = chatml_to_conversation(conversation["system"], "system")[-1]["value"]
     last_msg = chatml_to_conversation(conversation["chat"], "chat")[-1]["value"]
     expected = chatml_to_conversation(conversation["expected"], "chat")[-1]["value"]
-    predictions = system_msg + last_msg
 
     metric.add_batch(
-        references=[expected],
-        predictions=[predictions],
+        references=[expected], predictions=[last_msg], sources=[system_msg]
     )
 
     values = metric.compute()

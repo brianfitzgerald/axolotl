@@ -427,14 +427,8 @@ def causal_lm_bench_eval_callback_factory(trainer: Trainer, tokenizer):
                 # safely compute a metric and return the score if the format is correct
                 metric_score = None
                 try:
-                    features = {}
-                    if isinstance(metric.info.features, dict):
-                        features = metric.info.features
-                    elif isinstance(metric.info.features, list):
-                        for feature in metric.info.features:
-                            features.update(feature)
+                    features = metric._feature_names()
                     metric_kwargs = {k: kwargs[k] for k in features if k in kwargs}
-                    breakpoint()
                     metric_score = metric.compute(**metric_kwargs)
                     return (
                         metric_score["score"]
@@ -458,11 +452,12 @@ def causal_lm_bench_eval_callback_factory(trainer: Trainer, tokenizer):
                         predictions=predictions,
                         sources=sources,
                     )
-                    score = score or compute(
-                        metric,
-                        references=[[r] for r in references],
-                        predictions=predictions,
-                    )
+                    if score is None:
+                        score = compute(
+                            metric,
+                            references=[[r] for r in references],
+                            predictions=predictions,
+                        )
                     scores[metric_name] = score
                 return scores
 

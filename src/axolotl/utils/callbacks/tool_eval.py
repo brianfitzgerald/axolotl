@@ -5,6 +5,7 @@ FunctionCallAccuracy metric, used for evaluating the accuracy of the model's cho
 import json
 import re
 import statistics
+import traceback
 from typing import Dict, List, Optional, Union
 
 import datasets
@@ -60,6 +61,7 @@ class FunctionCallAccuracy(evaluate.Metric):
                 {
                     "references": datasets.Value("string"),
                     "predictions": datasets.Value("string"),
+                    "sources": datasets.Value("string"),
                 }
             ),
         )
@@ -68,10 +70,13 @@ class FunctionCallAccuracy(evaluate.Metric):
         self,
         references: List[str],
         predictions: List[str],
+        sources: List[str],
     ) -> Dict[str, float]:
         fn_name_accuracies, fn_param_accuracies = [], []
-        for expected_message, generated_message in zip(references, predictions):
-            system_fn_call = {}
+        for expected_message, generated_message, source_message in zip(
+            references, predictions, sources
+        ):
+            system_fn_call = extract_json_fn_call(source_message)
             expected_fn_call = extract_json_fn_call(expected_message)
             execution_fn_call = extract_json_fn_call(generated_message)
 
@@ -95,33 +100,46 @@ class FunctionCallAccuracy(evaluate.Metric):
                 fn_name_accuracies.append(0.0)
                 continue
 
-            fn_name_accuracy = (
-                1 if expected_fn_call["name"] == execution_fn_call["name"] else 0
-            )
+            try:
+                fn_name_accuracy = (
+                    1 if expected_fn_call["name"] == execution_fn_call["name"] else 0
+                )
+            except KeyError:
+                traceback.print_exc()
+                fn_name_accuracy = 0
 
-            system_fn_call_arguments = system_fn_call["parameters"]["properties"]
-            expected_args = expected_fn_call["arguments"]
-            execution_args = execution_fn_call["arguments"]
-
-            total_params, correct_params = 0, 0
-            # TODO validate that required params are present
-            # TODO validate type as well
-            for key in system_fn_call_arguments:
-                total_params += 1
-                if (
-                    key in system_fn_call_arguments
-                    and key in expected_args
-                    and key in execution_args
-                    and expected_args[key] == execution_args[key]
-                ):
-                    correct_params += 1
-            fn_param_accuracy = correct_params / total_params if total_params > 0 else 0
+            try:
+                system_fn_call_arguments = system_fn_call["parameters"]["properties"]
+                expected_args = expected_fn_call["arguments"]
+                execution_args = execution_fn_call["arguments"]
+                total_params, correct_params = 0, 0
+                # TODO validate that required params are present
+                # TODO validate type as well
+                for key in system_fn_call_arguments:
+                    total_params += 1
+                    if (
+                        key in system_fn_call_arguments
+                        and key in expected_args
+                        and key in execution_args
+                        and expected_args[key] == execution_args[key]
+                    ):
+                        correct_params += 1
+                fn_param_accuracy = (
+                    correct_params / total_params if total_params > 0 else 0
+                )
+            except Exception:
+                traceback.print_exc()
+                fn_param_accuracy = 0
 
             fn_param_accuracies.append(fn_param_accuracy)
             fn_name_accuracies.append(fn_name_accuracy)
 
         fn_choice_accuracy = statistics.mean(fn_name_accuracies)
         parameter_accuracy = statistics.mean(fn_param_accuracies)
+
+        if not fn_choice_accuracy or not parameter_accuracy:
+            return {"score": 0}
+
         return {
             "score": (fn_choice_accuracy + parameter_accuracy) / 2,
         }

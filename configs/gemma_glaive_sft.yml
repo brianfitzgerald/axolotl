@@ -69,4 +69,4 @@ do_causal_lm_eval: true
 special_tokens:
   additional_special_tokens: ["<functioncall>"]
 
-eval_causal_lm_metrics: ["tool_use_json", "sacrebleu", "ter", "chrf"]
+eval_causal_lm_metrics: ["tool_use_json", "sacrebleu", "chrf"]
