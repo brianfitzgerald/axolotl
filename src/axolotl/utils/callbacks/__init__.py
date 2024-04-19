@@ -546,7 +546,9 @@ def causal_lm_bench_eval_callback_factory(trainer: Trainer, tokenizer):
 
             if is_main_process():
                 eval_preds = predict_with_generate()
-                trainer.log(evaluate_preds(*eval_preds))
+                scores = evaluate_preds(*eval_preds)
+                scores = {f"metrics/{k}": v for k, v in scores.items()}
+                trainer.log(scores)
 
             return control
 

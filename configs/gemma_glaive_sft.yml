@@ -61,8 +61,8 @@ logging_steps: 1
 flash_attention: true
 
 eval_steps: 1000
-eval_table_size: 4
-eval_batch_size: 4
+eval_table_size: 2
+eval_batch_size: 2
 eval_sample_packing: false
 eval_max_new_tokens: 32
 do_causal_lm_eval: true
