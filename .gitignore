@@ -179,3 +179,4 @@ submit.sh
 *.out*
 
 typings/
+out/

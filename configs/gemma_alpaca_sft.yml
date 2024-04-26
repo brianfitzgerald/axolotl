@@ -9,7 +9,7 @@ datasets:
 val_set_size: 0.1
 output_dir: ./out
 
-adapter: qlora
+adapter: lora
 lora_r: 32
 lora_alpha: 16
 lora_dropout: 0.05
