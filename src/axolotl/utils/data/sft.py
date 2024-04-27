@@ -23,6 +23,7 @@ from axolotl.prompt_tokenizers import (
     AlpacaMultipleChoicePromptTokenizingStrategy,
     AlpacaPromptTokenizingStrategy,
     AlpacaReflectionPTStrategy,
+    ExtractiveQATokenizingStrategy,
     GPTeacherPromptTokenizingStrategy,
     JeopardyPromptTokenizingStrategy,
     OpenAssistantPromptTokenizingStrategy,
@@ -30,6 +31,7 @@ from axolotl.prompt_tokenizers import (
 )
 from axolotl.prompters import (
     AlpacaPrompter,
+    ExtractiveQAPrompter,
     GPTeacherPrompter,
     JeopardyPrompter,
     MultipleChoiceConcisePrompter,
@@ -523,7 +525,7 @@ def get_dataset_wrapper(
     cfg,
     d_base_type,
     dataset,
-    d_prompt_style=None,
+    d_prompt_style: Optional[str] = None,
 ):
     dataset_wrapper = None
     dataset_prompter = None
@@ -566,6 +568,20 @@ def get_dataset_wrapper(
     elif d_base_type == "alpaca":
         dataset_prompter = AlpacaPrompter(d_prompt_style)
         ds_strategy = AlpacaPromptTokenizingStrategy(
+            dataset_prompter,
+            tokenizer,
+            cfg.train_on_inputs,
+            cfg.sequence_len,
+        )
+        ds_wrapper = TokenizedPromptDataset(
+            ds_strategy,
+            dataset,
+            **ds_kwargs,
+        )
+        dataset_wrapper = ds_wrapper
+    elif d_base_type == "extractive_qa":
+        dataset_prompter = ExtractiveQAPrompter(d_prompt_style)
+        ds_strategy = ExtractiveQATokenizingStrategy(
             dataset_prompter,
             tokenizer,
             cfg.train_on_inputs,

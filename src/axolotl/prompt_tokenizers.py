@@ -158,6 +158,23 @@ class AlpacaPromptTokenizingStrategy(InstructionPromptTokenizingStrategy):
         )
 
 
+class ExtractiveQATokenizingStrategy(InstructionPromptTokenizingStrategy):
+    """
+    Tokenizing strategy for Alpaca prompts.
+    """
+
+    def parse_instruction_fields(self, prompt) -> Tuple[str, str, str]:
+        expected_schema = ", ".join(prompt["fields"])
+        expected_schema = "[" + expected_schema + "]"
+        output = str(prompt["json_schema"])
+
+        return (
+            expected_schema,
+            prompt["context"],
+            output,
+        )
+
+
 class AlpacaMultipleChoicePromptTokenizingStrategy(InstructionPromptTokenizingStrategy):
     """
     Tokenizing strategy for Alpaca Multiple Choice prompts.

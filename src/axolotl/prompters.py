@@ -41,7 +41,7 @@ class AlpacaPrompter(Prompter):
     turn_no_input_format: str
     prompt_style: Optional[PromptStyle] = None
 
-    def __init__(self, prompt_style=PromptStyle.INSTRUCT.value):
+    def __init__(self, prompt_style: Optional[str] = PromptStyle.INSTRUCT.value):
         self.prompt_style = prompt_style if prompt_style else PromptStyle.INSTRUCT.value
         self.match_prompt_style()
 
@@ -100,6 +100,30 @@ class AlpacaPrompter(Prompter):
         return REPR_TEMPLATE.format(
             full_prompt=self._build_result("{instruction}", "{input}", "{output}")
         )
+
+
+class ExtractiveQAPrompter(AlpacaPrompter):
+    def match_prompt_style(self):
+        self.system_prompt = "Below is a schema for information to extract from a document. Write a response that extracts the information from the document, following the provided schema."
+        # pylint: disable=duplicate-code
+        if self.prompt_style == PromptStyle.PHI.value:
+            self.turn_format = (
+                "<|user|>\n{schema}<context>{context}<|end|><|assistant|>"
+            )
+            self.system_format = "<|system|>{system}\n"
+        else:
+            raise NotImplementedError(
+                f"Prompt style {self.prompt_style} is not supported for Extractive QA."
+            )
+
+    def _build_result(self, schema, context, output):
+        res = (
+            self.system_format.format(system=self.system_prompt)
+            + self.turn_format.format(schema=schema, context=context, output=output)
+            + output
+        )
+
+        return res
 
 
 class UnpromptedPrompter(AlpacaPrompter):
