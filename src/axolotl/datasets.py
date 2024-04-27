@@ -6,6 +6,7 @@ from typing import List, Optional
 
 import torch
 from datasets import Dataset, IterableDataset
+from tabulate import tabulate
 
 from .prompt_tokenizers import PromptTokenizingStrategy
 
@@ -34,11 +35,13 @@ class TokenizedPromptDataset(Dataset):
         dataset: Dataset,
         process_count: Optional[int] = None,
         keep_in_memory: Optional[bool] = False,
+        print_first_tokenized_prompt: bool = True,
         **kwargs,
     ):
         self.prompt_tokenizer = prompt_tokenizer
         self.process_count = process_count
         self.keep_in_memory = keep_in_memory
+        self.print_first_tokenized_prompt = print_first_tokenized_prompt
         super().__init__(
             self.process(dataset).data,
             **kwargs,
@@ -52,6 +55,26 @@ class TokenizedPromptDataset(Dataset):
         if self.prompt_tokenizer.supports_batched:
             map_kwargs["batched"] = True
             map_kwargs["batch_size"] = 100
+
+        if self.print_first_tokenized_prompt:
+            tokenized = self.prompt_tokenizer.tokenize_prompt(dataset[0])
+            input_ids = tokenized["input_ids"]
+            decoded_input_ids = self.prompt_tokenizer.tokenizer.decode(
+                input_ids,
+                skip_special_tokens=False,
+            )
+            labels = tokenized["labels"]
+            print("Example tokenized prompt:")
+            print(
+                tabulate(
+                    [[decoded_input_ids, input_ids, labels]],
+                    headers=["Prompt", "Token IDs", "Labels"],
+                    tablefmt="simple_grid",
+                    maxcolwidths=[35, 35, 35, 35],
+                )
+            )
+            print(f"First tokenized prompt: {decoded_input_ids}")
+
         return dataset.map(
             self.prompt_tokenizer.tokenize_prompt,
             num_proc=num_proc,

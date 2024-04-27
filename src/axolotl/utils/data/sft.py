@@ -533,6 +533,10 @@ def get_dataset_wrapper(
         "keep_in_memory": cfg.dataset_keep_in_memory is True,
     }
 
+    LOG.info(
+        f"Loading dataset with base_type: {d_base_type} and prompt_style: {d_prompt_style}"
+    )
+
     if (
         isinstance(dataset, Dataset)
         and "input_ids" in dataset.features
