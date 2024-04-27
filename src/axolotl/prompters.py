@@ -117,11 +117,12 @@ class ExtractiveQAPrompter(AlpacaPrompter):
             )
 
     def _build_result(self, schema, context, output):
-        res = (
-            self.system_format.format(system=self.system_prompt)
-            + self.turn_format.format(schema=schema, context=context, output=output)
-            + output
-        )
+        res = self.system_format.format(
+            system=self.system_prompt
+        ) + self.turn_format.format(schema=schema, context=context, output=output)
+
+        if output:
+            res = f"{res}{output}"
 
         return res
 

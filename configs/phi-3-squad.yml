@@ -13,7 +13,7 @@ datasets:
     type: extractive_qa:phi
 
 dataset_prepared_path:
-val_set_size: 0.01
+val_set_size: 50
 output_dir: ./lora-out/phi-3-squad
 
 sequence_len: 4096
@@ -30,7 +30,7 @@ lora_fan_in_fan_out:
 
 gradient_accumulation_steps: 1
 micro_batch_size: 2
-num_epochs: 1
+num_epochs: 10
 optimizer: adamw_torch
 adam_beta2: 0.95
 adam_epsilon: 0.00001
@@ -49,13 +49,13 @@ early_stopping_patience: 3
 logging_steps: 1
 flash_attention: true
 
-eval_steps: 1000
+eval_steps: 100
 save_steps: 5000
 eval_table_size: 2
 eval_batch_size: 2
 eval_sample_packing: false
 eval_max_new_tokens: 32
-eval_causal_lm_metrics: ["sacrebleu", "ter", "chrf", "perplexity"]
+eval_causal_lm_metrics: ["sacrebleu", "ter", "chrf"]
 do_causal_lm_eval: true
 
 warmup_ratio: 0.2
@@ -64,4 +64,3 @@ weight_decay: 0.1
 resize_token_embeddings_to_32x: true
 special_tokens:
   additional_special_tokens: ["<document>"]
-
