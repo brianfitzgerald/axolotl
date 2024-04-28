@@ -13,7 +13,7 @@ datasets:
     type: extractive_qa:phi
 
 dataset_prepared_path:
-val_set_size: 50
+val_set_size: 10
 output_dir: ./lora-out/phi-3-squad
 
 sequence_len: 4096
@@ -55,7 +55,7 @@ eval_table_size: 2
 eval_batch_size: 2
 eval_sample_packing: false
 eval_max_new_tokens: 32
-eval_causal_lm_metrics: ["sacrebleu", "ter", "chrf"]
+eval_causal_lm_metrics: ["perplexity", "ter"]
 do_causal_lm_eval: true
 
 warmup_ratio: 0.2

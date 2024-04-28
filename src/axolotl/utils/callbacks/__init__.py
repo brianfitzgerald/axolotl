@@ -33,6 +33,7 @@ from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR, IntervalStrategy
 from axolotl.utils import is_mlflow_available
 from axolotl.utils.bench import log_gpu_memory_usage
 from axolotl.utils.callbacks.tool_eval import FunctionCallAccuracy
+from axolotl.utils.callbacks.perplexity import Perplexity
 from axolotl.utils.config.models.input.v0_4_1 import AxolotlInputConfig
 from axolotl.utils.distributed import (
     barrier,
@@ -379,6 +380,9 @@ def causal_lm_bench_eval_callback_factory(trainer: Trainer, tokenizer):
             for metric in self.cfg.eval_causal_lm_metrics:
                 if metric == "tool_use_json":
                     metrics[metric] = FunctionCallAccuracy()
+                elif metric == "perplexity":
+                    max_seq_len = self.cfg.eval_max_new_tokens
+                    metrics[metric] = Perplexity(trainer.model, tokenizer, max_seq_len)
                 else:
                     try:
                         metrics[metric] = evaluate.load(metric)
@@ -427,8 +431,8 @@ def causal_lm_bench_eval_callback_factory(trainer: Trainer, tokenizer):
                 # safely compute a metric and return the score if the format is correct
                 metric_score = None
                 try:
-                    features = metric._feature_names()
-                    metric_kwargs = {k: kwargs[k] for k in features if k in kwargs}
+                    # Only pass the kwargs that are in the metric's feature list
+                    metric_kwargs = {k: kwargs[k] for k in metric._feature_names() if k in kwargs}
                     metric_score = metric.compute(**metric_kwargs)
                     return (
                         metric_score["score"]

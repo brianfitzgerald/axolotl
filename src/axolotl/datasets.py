@@ -73,7 +73,6 @@ class TokenizedPromptDataset(Dataset):
                     maxcolwidths=[35, 35, 35, 35],
                 )
             )
-            print(f"First tokenized prompt: {decoded_input_ids}")
 
         return dataset.map(
             self.prompt_tokenizer.tokenize_prompt,

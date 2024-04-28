@@ -1,10 +1,11 @@
-from typing import Dict
+from typing import Dict, List, Optional
 
 import torch
 from torch import Tensor
 from tqdm import tqdm
 from transformers.modeling_outputs import CausalLMOutput
 from transformers.modeling_utils import PreTrainedModel
+from transformers.tokenization_utils import PreTrainedTokenizer
 
 
 class Perplexity:
@@ -14,19 +15,36 @@ class Perplexity:
     """
 
     def __init__(
-        self, model: PreTrainedModel, max_seq_len: int, stride: int = 512
+        self,
+        model: PreTrainedModel,
+        tokenizer: PreTrainedTokenizer,
+        max_seq_len: int,
+        stride: int = 512,
     ) -> None:
         self.max_seq_len = max_seq_len
         self.stride = stride
         self.model = model
+        self.tokenizer = tokenizer
+        self.device = model.device
+        self.name = "perplexity"
+
+    def _feature_names(self) -> List[str]:
+        return ["references"]
 
     def compute(
         self,
-        input_ids: Tensor,
+        references: Optional[List[str]] = None,
     ) -> Dict[str, float]:
         """
         Compute perplexity in a fixed length sliding window across the sequence.
         """
+        assert references, "Missing parameter: references"
+
+        references_tokenized = self.tokenizer(
+            references, return_tensors="pt", padding=True, truncation=True
+        )
+        input_ids: Tensor = references_tokenized["input_ids"]  # type: ignore
+        input_ids = input_ids.to(self.device)
 
         sequence_length = input_ids.size(1)
 
@@ -50,8 +68,8 @@ class Perplexity:
             if end_loc == sequence_length:
                 break
 
-        perplexity = torch.exp(torch.stack(losses).mean())
+        perplexity = torch.exp(torch.stack(losses).mean()).item()
 
         return {
-            "perplexity": perplexity.item(),
+            "score": perplexity,
         }
