@@ -1,11 +1,10 @@
-from typing import Dict, List, Optional
+from typing import Dict
 
-import datasets
-import evaluate
 import torch
+from torch import Tensor
 from tqdm import tqdm
-
-_KWARGS_DESCRIPTION = ""
+from transformers.modeling_outputs import CausalLMOutput
+from transformers.modeling_utils import PreTrainedModel
 
 
 class Perplexity:
@@ -14,36 +13,45 @@ class Perplexity:
     This is a custom variant that doesn't re-tokenize the input or re-load the model.
     """
 
-    def __init__(self, max_seq_len: int, stride: int = 512) -> None:
+    def __init__(
+        self, model: PreTrainedModel, max_seq_len: int, stride: int = 512
+    ) -> None:
         self.max_seq_len = max_seq_len
         self.stride = stride
+        self.model = model
 
     def compute(
         self,
-        input_ids: List[int],
-        labels: List[int],
-        predictions: List[int],
+        input_ids: Tensor,
     ) -> Dict[str, float]:
-        stride = 512
-        input_ids_t = torch.tensor(input_ids)
-        labels_t = torch.tensor(labels)
-        predictions_t = torch.tensor(predictions)
+        """
+        Compute perplexity in a fixed length sliding window across the sequence.
+        """
 
-        nlls = []
+        sequence_length = input_ids.size(1)
+
+        losses = []
         prev_end_loc = 0
-        for begin_loc in tqdm(range(0, seq_len, stride)):
-            end_loc = min(begin_loc + max_length, seq_len)
-            trg_len = (
-                end_loc - prev_end_loc
-            )  # may be different from stride on last loop
-            input_ids_t = input_ids_t[:, begin_loc:end_loc]
-            target_ids = input_ids.clone()
-            target_ids[:, :-trg_len] = -100
+        for begin_loc in tqdm(range(0, sequence_length, self.stride)):
+            end_loc = min(begin_loc + self.max_seq_len, sequence_length)
+            trg_len = end_loc - prev_end_loc
+            input_ids_slice = input_ids[:, begin_loc:end_loc]
+            labels_slice = input_ids_slice.clone()
+            labels_slice[:, :-trg_len] = -100
 
-            nlls.append(neg_log_likelihood)
+            with torch.no_grad():
+                outputs: CausalLMOutput = self.model(
+                    input_ids=input_ids_slice, labels=labels_slice
+                )
+
+            losses.append(outputs.loss)
 
             prev_end_loc = end_loc
-            if end_loc == seq_len:
+            if end_loc == sequence_length:
                 break
 
-        ppl = torch.exp(torch.stack(nlls).mean())
+        perplexity = torch.exp(torch.stack(losses).mean())
+
+        return {
+            "perplexity": perplexity.item(),
+        }

@@ -1,7 +1,4 @@
 # pylint: disable=redefined-outer-name
-"""
-Test classes for checking functionality of the cfg normalization
-"""
 
 from pytest import fixture
 
