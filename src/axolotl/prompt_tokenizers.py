@@ -176,6 +176,30 @@ class ExtractiveQATokenizingStrategy(InstructionPromptTokenizingStrategy):
         )
 
 
+class SquadTokenizingStrategy(InstructionPromptTokenizingStrategy):
+    """
+    Convert the sample to a tuple of instruction, input, and response
+    """
+
+    def parse_instruction_fields(self, prompt) -> Tuple[str, str, str]:
+        context = prompt["context"]
+        question = prompt["question"]
+        answers = prompt["answers"]["text"]
+        if len(answers) == 0:
+            answer = "I'm sorry, I don't know the answer to that question."
+        else:
+            answer = answers[0]
+
+        # TODO make this phi specific
+        answer = f"{answer}<|end|>\n"
+
+        return (
+            context,
+            question,
+            answer,
+        )
+
+
 class AlpacaMultipleChoicePromptTokenizingStrategy(InstructionPromptTokenizingStrategy):
     """
     Tokenizing strategy for Alpaca Multiple Choice prompts.
