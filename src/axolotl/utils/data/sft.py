@@ -503,7 +503,7 @@ def load_prepare_datasets(
 
         dataset = dataset.train_test_split(
             test_size=val_set_size,
-            shuffle=False,
+            shuffle=cfg.shuffle_before_split,
             seed=cfg.seed or 42,
             train_new_fingerprint=train_fingerprint,
             test_new_fingerprint=test_fingerprint,

@@ -13,12 +13,13 @@ datasets:
     type: squad:phi
 
 dataset_prepared_path: ./prepared-datasets/squad
-val_set_size: 10
+val_set_size: 16
 output_dir: ./lora-out/squad
+shuffle_before_split: true
 
-sequence_len: 4096
-sample_packing: true
-pad_to_sequence_len: true
+sequence_len: 8192
+sample_packing: false
+pad_to_sequence_len: false
 
 adapter: lora
 lora_model_dir:
@@ -42,6 +43,8 @@ train_on_inputs: false
 group_by_length: false
 bf16: auto
 
+seed: 1010101
+
 gradient_checkpointing: true
 gradient_checkpointing_kwargs:
   use_reentrant: True
@@ -51,8 +54,8 @@ flash_attention: true
 
 eval_steps: 100
 save_steps: 5000
-eval_table_size: 8
-eval_batch_size: 8
+eval_table_size: 16
+eval_batch_size: 2
 eval_sample_packing: false
 eval_max_new_tokens: 64
 eval_causal_lm_metrics: ["perplexity", "ter"]
