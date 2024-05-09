@@ -21,31 +21,22 @@ sequence_len: 4096
 sample_packing: false
 pad_to_sequence_len: false
 
-adapter: lora
-lora_model_dir:
-lora_r: 256
-lora_alpha: 128
-lora_dropout: 0.05
-lora_target_linear: true
-lora_target_modules:
-  - down_proj
-  - gate_up_proj
-  - qkv_proj
-  - o_proj
-
-gradient_accumulation_steps: 4
+gradient_accumulation_steps: 1
 micro_batch_size: 2
-num_epochs: 2
+num_epochs: 10
 optimizer: adamw_torch
 adam_beta2: 0.95
 adam_epsilon: 0.00001
 max_grad_norm: 1.0
 lr_scheduler: cosine
-learning_rate: 1e-5
+learning_rate: 5e-6
+
+bf16: auto
+fp16:
+tf32: true
 
 train_on_inputs: false
 group_by_length: false
-bf16: auto
 
 seed: 1010101
 
@@ -55,8 +46,8 @@ gradient_checkpointing_kwargs:
 logging_steps: 1
 flash_attention: true
 
-eval_steps: 100
-save_steps: 5000
+eval_steps: 10000
+save_steps: 10000
 eval_table_size: 16
 eval_batch_size: 2
 eval_sample_packing: false
