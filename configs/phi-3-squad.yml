@@ -23,13 +23,17 @@ pad_to_sequence_len: false
 
 adapter: lora
 lora_model_dir:
-lora_r: 16
-lora_alpha: 32
+lora_r: 256
+lora_alpha: 128
 lora_dropout: 0.05
 lora_target_linear: true
-lora_fan_in_fan_out:
+lora_target_modules:
+  - down_proj
+  - gate_up_proj
+  - qkv_proj
+  - o_proj
 
-gradient_accumulation_steps: 2
+gradient_accumulation_steps: 4
 micro_batch_size: 2
 num_epochs: 100
 optimizer: adamw_torch
@@ -37,7 +41,7 @@ adam_beta2: 0.95
 adam_epsilon: 0.00001
 max_grad_norm: 1.0
 lr_scheduler: cosine
-learning_rate: 1e-4
+learning_rate: 1e-5
 
 train_on_inputs: false
 group_by_length: false
@@ -60,7 +64,7 @@ eval_max_new_tokens: 64
 eval_causal_lm_metrics: ["perplexity", "ter"]
 do_causal_lm_eval: true
 
-warmup_ratio: 0.1
+warmup_ratio: 0.2
 weight_decay: 0.1
 resize_token_embeddings_to_32x: true
 special_tokens:
