@@ -1,4 +1,4 @@
-base_model: microsoft/Phi-3-mini-128k-instruct
+base_model: microsoft/Phi-3-mini-4k-instruct
 trust_remote_code: true
 model_type: AutoModelForCausalLM
 tokenizer_type: AutoTokenizer
@@ -17,8 +17,8 @@ val_set_size: 16
 output_dir: ./lora-out/squad
 shuffle_before_split: true
 
-sequence_len: 8192
-sample_packing: false
+sequence_len: 4096
+sample_packing: true
 pad_to_sequence_len: false
 
 adapter: lora
@@ -29,7 +29,7 @@ lora_dropout: 0.05
 lora_target_linear: true
 lora_fan_in_fan_out:
 
-gradient_accumulation_steps: 1
+gradient_accumulation_steps: 2
 micro_batch_size: 2
 num_epochs: 100
 optimizer: adamw_torch
@@ -37,7 +37,7 @@ adam_beta2: 0.95
 adam_epsilon: 0.00001
 max_grad_norm: 1.0
 lr_scheduler: cosine
-learning_rate: 2e-6
+learning_rate: 1e-4
 
 train_on_inputs: false
 group_by_length: false
@@ -48,7 +48,6 @@ seed: 1010101
 gradient_checkpointing: true
 gradient_checkpointing_kwargs:
   use_reentrant: True
-early_stopping_patience: 3
 logging_steps: 1
 flash_attention: true
 
@@ -61,8 +60,7 @@ eval_max_new_tokens: 64
 eval_causal_lm_metrics: ["perplexity", "ter"]
 do_causal_lm_eval: true
 
-warmup_ratio: 0.2
-debug: true
+warmup_ratio: 0.1
 weight_decay: 0.1
 resize_token_embeddings_to_32x: true
 special_tokens:

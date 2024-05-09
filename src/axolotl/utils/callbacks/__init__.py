@@ -32,8 +32,8 @@ from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR, IntervalStrategy
 
 from axolotl.utils import is_mlflow_available
 from axolotl.utils.bench import log_gpu_memory_usage
-from axolotl.utils.callbacks.tool_eval import FunctionCallAccuracy
 from axolotl.utils.callbacks.perplexity import Perplexity
+from axolotl.utils.callbacks.tool_eval import FunctionCallAccuracy
 from axolotl.utils.config.models.input.v0_4_1 import AxolotlInputConfig
 from axolotl.utils.distributed import (
     barrier,
@@ -432,7 +432,9 @@ def causal_lm_bench_eval_callback_factory(trainer: Trainer, tokenizer):
                 metric_score = None
                 try:
                     # Only pass the kwargs that are in the metric's feature list
-                    metric_kwargs = {k: kwargs[k] for k in metric._feature_names() if k in kwargs}
+                    metric_kwargs = {
+                        k: kwargs[k] for k in metric._feature_names() if k in kwargs
+                    }
                     metric_score = metric.compute(**metric_kwargs)
                     return (
                         metric_score["score"]
@@ -823,4 +825,14 @@ class SaveAxolotlConfigtoWandBCallback(TrainerCallback):
                 )
             except (FileNotFoundError, ConnectionError) as err:
                 LOG.warning(f"Error while saving Axolotl config to WandB: {err}")
+        return control
+
+
+class SaveModelOnTrainEndCallback(TrainerCallback):
+    """Callback to save model on train end"""
+
+    def on_train_end(  # pylint: disable=unused-argument
+        self, args, state, control, **kwargs
+    ):
+        control.should_save = True
         return control
