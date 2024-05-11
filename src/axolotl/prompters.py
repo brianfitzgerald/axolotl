@@ -149,7 +149,7 @@ class SquadPrompter(AlpacaPrompter):
             answer = unidecode(answer)
         conversation = [
             {"role": "system", "content": SQUAD_SYSTEM_PROMPT},
-            {"role": "user", "content": f"<question>{question}\n<context>{context}"},
+            {"role": "user", "content": f"Question: {question}\nContext: {context}"},
         ]
 
         if answer:

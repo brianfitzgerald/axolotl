@@ -945,7 +945,8 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         if self.cfg.loss_watchdog_threshold is not None:
             callbacks.append(LossWatchDogCallback(self.cfg))
 
-        callbacks.append(SaveModelOnTrainEndCallback())
+        if self.cfg.save_on_end:
+            callbacks.append(SaveModelOnTrainEndCallback())
 
         return callbacks
 
@@ -1431,7 +1432,8 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
 
     def get_callbacks(self):
         callbacks = super().get_callbacks()
-        callbacks.append(SaveModelOnTrainEndCallback())
+        if self.cfg.save_on_end:
+            callbacks.append(SaveModelOnTrainEndCallback())
 
         return callbacks
 

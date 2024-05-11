@@ -37,6 +37,7 @@ tf32: true
 
 train_on_inputs: false
 group_by_length: false
+save_on_end: false
 
 seed: 1010101
 
@@ -48,11 +49,11 @@ flash_attention: true
 
 eval_steps: 10000
 save_steps: 10000
-eval_table_size: 16
+eval_table_size: 4
 eval_batch_size: 2
 eval_sample_packing: false
 eval_max_new_tokens: 64
-eval_causal_lm_metrics: ["perplexity", "ter"]
+eval_causal_lm_metrics: ["perplexity", "ter", "sacrebleu"]
 do_causal_lm_eval: true
 
 warmup_ratio: 0.2
@@ -60,4 +61,3 @@ weight_decay: 0.1
 resize_token_embeddings_to_32x: true
 special_tokens:
   pad_token: "<unk>"
-  additional_special_tokens: ["<document>", "<question>"]

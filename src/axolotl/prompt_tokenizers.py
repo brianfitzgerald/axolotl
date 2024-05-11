@@ -181,7 +181,7 @@ class SquadTokenizingStrategy(InstructionPromptTokenizingStrategy):
     Convert the sample to a tuple of instruction, input, and response
     """
 
-    def parse_instruction_fields(self, prompt) -> Tuple[str, str, str]:
+    def tokenize_prompt(self, prompt):
         context = prompt["context"]
         question = prompt["question"]
         answers = prompt["answers"]["text"]
@@ -190,14 +190,29 @@ class SquadTokenizingStrategy(InstructionPromptTokenizingStrategy):
         else:
             answer = answers[0]
 
-        # TODO make this phi specific
-        answer = f"{answer}<|end|>\n"
-
-        return (
-            context,
-            question,
-            answer,
+        user_prompt = next(
+            iter(
+                self.prompter.build_prompt(
+                    context,
+                    question,
+                )
+            )
         )
+
+        tokenized_prompt = self._tokenize(user_prompt, strip_bos_token=True, add_eos_token=False)
+        if not self.train_on_inputs:
+            user_prompt_len = len(tokenized_prompt["input_ids"])
+            # TODO this could be sped up using numpy array slicing
+            tokenized_prompt["labels"] = [IGNORE_INDEX] * user_prompt_len
+        tokenized_res_prompt = self._tokenize(
+            answer, strip_bos_token=True, add_eos_token=True
+        )
+        tokenized_prompt["input_ids"] += tokenized_res_prompt["input_ids"]
+        tokenized_prompt["attention_mask"] += tokenized_res_prompt["attention_mask"]
+        tokenized_prompt["labels"] += tokenized_res_prompt["input_ids"]
+
+        return tokenized_prompt
+
 
 
 class AlpacaMultipleChoicePromptTokenizingStrategy(InstructionPromptTokenizingStrategy):
