@@ -104,30 +104,30 @@ GLAIVE_TO_SHAREGPT_ROLE = {
 }
 
 GLAIVE_MSG_REGEX = re.compile(rf"({'|'.join(GLAIVE_ROLES)}): ")
+CHATML_REGEX = re.compile(r"(<\|im_start\|>|<\|im_end\|>|<\|endoftext\|>)")
 
 
-def chatml_to_conversation(row: Dict[str, str]) -> List[Dict[str, str]]:
+def chatml_to_conversation(prompt: str, key: str) -> List[Dict[str, str]]:
     """
     Converts a ChatML formatted row to a list of messages in ShareGPT format.
     Initially based off https://github.com/lilacai/lilac/blob/main/notebooks/GlaiveToShareGPT.ipynb.
+    key is either "system" or "chat".
     """
 
-    system_prompt = row.get("system")
-    if system_prompt:
-        system_prompt = system_prompt.removeprefix("SYSTEM: ")
+    prompt = prompt.strip().replace("\n", "")
+    if key == "system":
+        prompt = prompt.removeprefix("SYSTEM: ")
 
-    chat_str = row["chat"]
-    chat_msgs = [s.strip() for s in GLAIVE_MSG_REGEX.split(chat_str) if s]
+    prompt = CHATML_REGEX.sub("", prompt)
 
+    if key == "system":
+        return [{"from": GLAIVE_TO_SHAREGPT_ROLE["SYSTEM"], "value": prompt}]
+
+    chat_msgs = [s.strip() for s in GLAIVE_MSG_REGEX.split(prompt) if s]
     chat_msg_dicts = [
         {"from": GLAIVE_TO_SHAREGPT_ROLE[role], "value": value}
         for role, value in zip(chat_msgs[::2], chat_msgs[1::2])
     ]
-
-    if system_prompt:
-        chat_msg_dicts = [
-            {"from": GLAIVE_TO_SHAREGPT_ROLE["SYSTEM"], "value": system_prompt}
-        ] + chat_msg_dicts
 
     return chat_msg_dicts
 

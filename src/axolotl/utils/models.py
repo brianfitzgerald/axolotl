@@ -1,4 +1,5 @@
 """Module for models and model loading"""
+
 # pylint: disable=too-many-lines
 
 import logging
@@ -274,6 +275,7 @@ def load_tokenizer(cfg):
         tokenizer.add_special_tokens(
             {"additional_special_tokens": additional_special_tokens}
         )
+        LOG.debug(f"Added additional special tokens: {additional_special_tokens}")
 
     with zero_only():
         LOG.debug(f"EOS: {tokenizer.eos_token_id} / {tokenizer.eos_token}")
@@ -504,6 +506,9 @@ def load_model(
         bnb_config = {
             "load_in_8bit": True,
         }
+        # Exclude mamba blocks from int8 quantization for jamba
+        if cfg.model_config_type == "jamba":
+            bnb_config["llm_int8_skip_modules"] = ["mamba"]
         model_kwargs["quantization_config"] = BitsAndBytesConfig(
             **bnb_config,
         )

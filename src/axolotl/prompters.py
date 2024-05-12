@@ -6,6 +6,8 @@ from typing import Generator, Optional, Union
 
 from colorama import Fore
 from fastchat.conversation import Conversation, get_conv_template
+from transformers.tokenization_utils import PreTrainedTokenizer
+from unidecode import unidecode
 
 LOG = logging.getLogger("axolotl")
 IGNORE_TOKEN_ID = -100
@@ -20,6 +22,7 @@ class PromptStyle(Enum):
     INSTRUCT = "instruct"
     CHAT = "chat"
     CHATML = "chatml"
+    PHI = "phi"
 
 
 class Prompter:
@@ -40,7 +43,7 @@ class AlpacaPrompter(Prompter):
     turn_no_input_format: str
     prompt_style: Optional[PromptStyle] = None
 
-    def __init__(self, prompt_style=PromptStyle.INSTRUCT.value):
+    def __init__(self, prompt_style: Optional[str] = PromptStyle.INSTRUCT.value):
         self.prompt_style = prompt_style if prompt_style else PromptStyle.INSTRUCT.value
         self.match_prompt_style()
 
@@ -52,16 +55,22 @@ class AlpacaPrompter(Prompter):
                 "### Instruction:\n{instruction}\n\n### Response:\n"
             )
             self.system_format = "{system}\n\n"
-        if self.prompt_style == PromptStyle.CHAT.value:
+        elif self.prompt_style == PromptStyle.CHAT.value:
             self.turn_format = "USER: {instruction}\n{input}\nASSISTANT:"
             self.turn_no_input_format = "USER: {instruction}\nASSISTANT:"
             self.system_format = "SYSTEM: {system}\n"
-        if self.prompt_style == PromptStyle.CHATML.value:
+        elif self.prompt_style == PromptStyle.CHATML.value:
             self.turn_format = "<|im_start|>user\n{instruction}\n{input}<|im_end|>\n<|im_start|>assistant\n"
             self.turn_no_input_format = (
                 "<|im_start|>user\n{instruction}<|im_end|>\n<|im_start|>assistant\n"
             )
             self.system_format = "<|im_start|>system\n{system}<|im_end|>\n"
+        elif self.prompt_style == PromptStyle.PHI.value:
+            self.turn_format = "<|user|>\n{instruction}\n{input}\n<|assistant|>\n"
+            self.turn_no_input_format = (
+                "<|user|>\n{instruction}<|end|>\n<|assistant|>\n"
+            )
+            self.system_format = "<|system|>{system}\n"
 
     def _build_result(self, instruction, input_text, output):
         # returns the full prompt from instruction and optional input
@@ -95,6 +104,59 @@ class AlpacaPrompter(Prompter):
         return REPR_TEMPLATE.format(
             full_prompt=self._build_result("{instruction}", "{input}", "{output}")
         )
+
+
+class ExtractiveQAPrompter(AlpacaPrompter):
+    def match_prompt_style(self):
+        self.system_prompt = "Below is a schema for information to extract from a document. Write a response that extracts the information from the document, following the provided schema."
+        # pylint: disable=duplicate-code
+        if self.prompt_style == PromptStyle.PHI.value:
+            self.turn_format = (
+                "<|user|>\n{schema}<context>{context}<|end|><|assistant|>"
+            )
+            self.system_format = "<|system|>{system}\n"
+        else:
+            raise NotImplementedError(
+                f"Prompt style {self.prompt_style} is not supported for Extractive QA."
+            )
+
+    def _build_result(self, schema, context, output):
+        res = self.system_format.format(
+            system=self.system_prompt
+        ) + self.turn_format.format(schema=schema, context=context, output=output)
+
+        if output:
+            res = f"{res}{output}"
+
+        return res
+
+
+SQUAD_SYSTEM_PROMPT = "Below is a passage of text paired with a question. Write a response that answers the question using information from the passage."
+
+
+class SquadPrompter(AlpacaPrompter):
+    def __init__(self, tokenizer: PreTrainedTokenizer):
+        self.tokenizer = tokenizer
+
+    def _build_result(self, context, question, answer=None) -> str:
+        """
+        Returns the user's input, that the model will complete.
+        If output is provided, it is appended to the end of the prompt.
+        """
+        context = unidecode(context)
+        question = unidecode(question)
+        if answer:
+            answer = unidecode(answer)
+        conversation = [
+            {"role": "system", "content": SQUAD_SYSTEM_PROMPT},
+            {"role": "user", "content": f"Question: {question}\nContext: {context}"},
+        ]
+
+        if answer:
+            conversation.append({"role": "assistant", "content": answer})
+
+        conversation_out: str = self.tokenizer.apply_chat_template(conversation, tokenize=False)  # type: ignore
+        return conversation_out
 
 
 class UnpromptedPrompter(AlpacaPrompter):
@@ -348,7 +410,10 @@ class ShareGPTPrompter(Prompter):  # pylint: disable=too-few-public-methods
                 )
 
             if len(conv.messages) > 0 and ((role == conv.messages[-1][0])):
-                LOG.warning(f"{SHAREGPT_ASSERTION_FAILED_ROLE}: {sentence}")
+                if (
+                    role != "assistant"
+                ):  # back to back assistant calls may be okay for tool calls
+                    LOG.warning(f"{SHAREGPT_ASSERTION_FAILED_ROLE}: {sentence}")
 
             conv.append_message(role, sentence["value"])
 
@@ -377,12 +442,14 @@ class ShareGPTPrompterV2(ShareGPTPrompter):
         conversation: Optional[Union[str, Conversation]] = None,
         role_key_human: Optional[str] = None,
         role_key_model: Optional[str] = None,
+        role_key_tool: Optional[str] = None,
         roles: Optional[dict] = None,
     ):
         super().__init__(
             conversation=conversation,
             role_key_human=role_key_human,
             role_key_model=role_key_model,
+            role_key_tool=role_key_tool,
             roles=roles,
         )
 

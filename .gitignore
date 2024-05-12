@@ -1,5 +1,4 @@
 **/axolotl.egg-info
-configs
 last_run_prepared/
 .vscode
 _site/
@@ -176,3 +175,9 @@ qlora-out/*
 mlruns/*
 
 /.quarto/
+prepared-datasets/
+submit.sh
+*.out*
+
+typings/
+out/

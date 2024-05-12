@@ -14,7 +14,7 @@ from datasets import (
 )
 from huggingface_hub import hf_hub_download
 from huggingface_hub.utils import HFValidationError
-from transformers import PreTrainedTokenizerBase
+from transformers.tokenization_utils import PreTrainedTokenizer
 
 from axolotl.common.const import DEFAULT_DATASET_PREPARED_PATH
 from axolotl.datasets import TokenizedPromptDataset
@@ -23,19 +23,23 @@ from axolotl.prompt_tokenizers import (
     AlpacaMultipleChoicePromptTokenizingStrategy,
     AlpacaPromptTokenizingStrategy,
     AlpacaReflectionPTStrategy,
+    ExtractiveQATokenizingStrategy,
     GPTeacherPromptTokenizingStrategy,
     JeopardyPromptTokenizingStrategy,
     OpenAssistantPromptTokenizingStrategy,
+    SquadTokenizingStrategy,
     SummarizeTLDRPromptTokenizingStrategy,
 )
 from axolotl.prompters import (
     AlpacaPrompter,
+    ExtractiveQAPrompter,
     GPTeacherPrompter,
     JeopardyPrompter,
     MultipleChoiceConcisePrompter,
     MultipleChoiceExplainPrompter,
     Prompter,
     ReflectAlpacaPrompter,
+    SquadPrompter,
     SummarizeTLDRPrompter,
     UnsupportedPrompter,
 )
@@ -452,7 +456,7 @@ def get_ds_type(config_dataset: DictDefault):
 
 
 def load_prepare_datasets(
-    tokenizer: PreTrainedTokenizerBase,
+    tokenizer: PreTrainedTokenizer,
     cfg,
     default_dataset_prepared_path,
     split="train",
@@ -470,12 +474,16 @@ def load_prepare_datasets(
             index=cfg.dataset_shard_idx,
         )
 
-    if split == "train" and cfg.val_set_size:
+    val_set_size = (
+        int(cfg.val_set_size) if cfg.val_set_size > 1 else float(cfg.val_set_size)
+    )
+
+    if split == "train" and val_set_size:
         # ensure we end up with the same fingerprint by doing rank0 first and being able to cache
         to_hash_train = (
             dataset._fingerprint  # pylint: disable=protected-access
             + "|"
-            + str(cfg.val_set_size)
+            + str(val_set_size)
             + "|"
             + "train"
             + "|"
@@ -484,7 +492,7 @@ def load_prepare_datasets(
         to_hash_test = (
             dataset._fingerprint  # pylint: disable=protected-access
             + "|"
-            + str(cfg.val_set_size)
+            + str(val_set_size)
             + "|"
             + "test"
             + "|"
@@ -494,8 +502,8 @@ def load_prepare_datasets(
         test_fingerprint = md5(to_hash_test)
 
         dataset = dataset.train_test_split(
-            test_size=cfg.val_set_size,
-            shuffle=False,
+            test_size=val_set_size,
+            shuffle=cfg.shuffle_before_split,
             seed=cfg.seed or 42,
             train_new_fingerprint=train_fingerprint,
             test_new_fingerprint=test_fingerprint,
@@ -519,7 +527,7 @@ def get_dataset_wrapper(
     cfg,
     d_base_type,
     dataset,
-    d_prompt_style=None,
+    d_prompt_style: Optional[str] = None,
 ):
     dataset_wrapper = None
     dataset_prompter = None
@@ -529,6 +537,11 @@ def get_dataset_wrapper(
         "keep_in_memory": cfg.dataset_keep_in_memory is True,
     }
 
+    LOG.info(
+        f"Loading dataset with base_type: {d_base_type} and prompt_style: {d_prompt_style}"
+    )
+
+    use_dataset_wrapper = True
     if (
         isinstance(dataset, Dataset)
         and "input_ids" in dataset.features
@@ -538,23 +551,14 @@ def get_dataset_wrapper(
         # dataset is already tokenized, just drop it straight in
         dataset_prompter = UnsupportedPrompter()
         dataset_wrapper = dataset
+        use_dataset_wrapper = False
     elif isinstance(config_dataset.type, DictDefault):
         ds_strategy = load(
             "user_defined", tokenizer, cfg, config_dataset.type.to_dict()
         )
         dataset_prompter = UnsupportedPrompter()
-        dataset_wrapper = TokenizedPromptDataset(
-            ds_strategy,
-            dataset,
-            **ds_kwargs,
-        )
     elif ds_strategy := load(config_dataset.type, tokenizer, cfg, config_dataset):
         dataset_prompter = UnsupportedPrompter()
-        dataset_wrapper = TokenizedPromptDataset(
-            ds_strategy,
-            dataset,
-            **ds_kwargs,
-        )
     elif d_base_type == "alpaca":
         dataset_prompter = AlpacaPrompter(d_prompt_style)
         ds_strategy = AlpacaPromptTokenizingStrategy(
@@ -563,12 +567,22 @@ def get_dataset_wrapper(
             cfg.train_on_inputs,
             cfg.sequence_len,
         )
-        ds_wrapper = TokenizedPromptDataset(
-            ds_strategy,
-            dataset,
-            **ds_kwargs,
+    elif d_base_type == "extractive_qa":
+        dataset_prompter = ExtractiveQAPrompter(d_prompt_style)
+        ds_strategy = ExtractiveQATokenizingStrategy(
+            dataset_prompter,
+            tokenizer,
+            cfg.train_on_inputs,
+            cfg.sequence_len,
         )
-        dataset_wrapper = ds_wrapper
+    elif d_base_type == "squad":
+        dataset_prompter = SquadPrompter(tokenizer)
+        ds_strategy = SquadTokenizingStrategy(
+            dataset_prompter,
+            tokenizer,
+            cfg.train_on_inputs,
+            cfg.sequence_len,
+        )
     elif d_base_type == "explainchoice":
         dataset_prompter = MultipleChoiceExplainPrompter(d_prompt_style)
         ds_strategy = AlpacaMultipleChoicePromptTokenizingStrategy(
@@ -577,12 +591,6 @@ def get_dataset_wrapper(
             cfg.train_on_inputs,
             cfg.sequence_len,
         )
-        ds_wrapper = TokenizedPromptDataset(
-            ds_strategy,
-            dataset,
-            **ds_kwargs,
-        )
-        dataset_wrapper = ds_wrapper
     elif d_base_type == "concisechoice":
         dataset_prompter = MultipleChoiceConcisePrompter(d_prompt_style)
         ds_strategy = AlpacaMultipleChoicePromptTokenizingStrategy(
@@ -591,12 +599,6 @@ def get_dataset_wrapper(
             cfg.train_on_inputs,
             cfg.sequence_len,
         )
-        ds_wrapper = TokenizedPromptDataset(
-            ds_strategy,
-            dataset,
-            **ds_kwargs,
-        )
-        dataset_wrapper = ds_wrapper
     elif d_base_type == "summarizetldr":
         dataset_prompter = SummarizeTLDRPrompter(d_prompt_style)
         ds_strategy = SummarizeTLDRPromptTokenizingStrategy(
@@ -605,12 +607,6 @@ def get_dataset_wrapper(
             cfg.train_on_inputs,
             cfg.sequence_len,
         )
-        ds_wrapper = TokenizedPromptDataset(
-            ds_strategy,
-            dataset,
-            **ds_kwargs,
-        )
-        dataset_wrapper = ds_wrapper
     elif d_base_type == "jeopardy":
         dataset_prompter = JeopardyPrompter(d_prompt_style)
         ds_strategy = JeopardyPromptTokenizingStrategy(
@@ -619,12 +615,6 @@ def get_dataset_wrapper(
             cfg.train_on_inputs,
             cfg.sequence_len,
         )
-        ds_wrapper = TokenizedPromptDataset(
-            ds_strategy,
-            dataset,
-            **ds_kwargs,
-        )
-        dataset_wrapper = ds_wrapper
     elif d_base_type == "oasst":
         dataset_prompter = AlpacaPrompter(d_prompt_style)
         ds_strategy = OpenAssistantPromptTokenizingStrategy(
@@ -633,12 +623,6 @@ def get_dataset_wrapper(
             cfg.train_on_inputs,
             cfg.sequence_len,
         )
-        ds_wrapper = TokenizedPromptDataset(
-            ds_strategy,
-            dataset,
-            **ds_kwargs,
-        )
-        dataset_wrapper = ds_wrapper
     elif d_base_type == "gpteacher":
         dataset_prompter = GPTeacherPrompter(d_prompt_style)
         ds_strategy = GPTeacherPromptTokenizingStrategy(
@@ -647,12 +631,6 @@ def get_dataset_wrapper(
             cfg.train_on_inputs,
             cfg.sequence_len,
         )
-        ds_wrapper = TokenizedPromptDataset(
-            ds_strategy,
-            dataset,
-            **ds_kwargs,
-        )
-        dataset_wrapper = ds_wrapper
     elif d_base_type == "reflection":
         dataset_prompter = ReflectAlpacaPrompter(d_prompt_style)
         ds_strategy = AlpacaReflectionPTStrategy(
@@ -661,12 +639,6 @@ def get_dataset_wrapper(
             cfg.train_on_inputs,
             cfg.sequence_len,
         )
-        ds_wrapper = TokenizedPromptDataset(
-            ds_strategy,
-            dataset,
-            **ds_kwargs,
-        )
-        dataset_wrapper = ds_wrapper
     else:
         suffix = ""
         if ":load_" in config_dataset.type:
@@ -676,6 +648,12 @@ def get_dataset_wrapper(
         )
         raise ValueError(
             f"unhandled prompt tokenization strategy: {config_dataset.type} {suffix}"
+        )
+    if use_dataset_wrapper:
+        dataset_wrapper = TokenizedPromptDataset(
+            ds_strategy,
+            dataset,
+            **ds_kwargs,
         )
 
     return dataset_wrapper, dataset_prompter

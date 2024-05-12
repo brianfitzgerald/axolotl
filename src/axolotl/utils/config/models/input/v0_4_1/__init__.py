@@ -17,6 +17,8 @@ from axolotl.utils.config.models.internals import GPUCapabilities
 
 LOG = logging.getLogger("axolotl.utils.config.models.input")
 
+SUPPORTED_METRICS = {"sacrebleu", "comet", "ter", "chrf", "tool_use_json", "perplexity"}
+
 
 class DeprecatedParameters(BaseModel):
     """configurations that are deprecated"""
@@ -143,6 +145,7 @@ class ChatTemplate(str, Enum):
     inst = "inst"  # pylint: disable=invalid-name
     gemma = "gemma"  # pylint: disable=invalid-name
     cohere = "cohere"  # pylint: disable=invalid-name
+    phi_3 = "phi_3"  # pylint: disable=invalid-name
 
 
 class LoftQConfig(BaseModel):
@@ -409,6 +412,17 @@ class WandbConfig(BaseModel):
         return data
 
 
+class GradioConfig(BaseModel):
+    """Gradio configuration subset"""
+
+    gradio_title: Optional[str] = None
+    gradio_share: Optional[bool] = None
+    gradio_server_name: Optional[str] = None
+    gradio_server_port: Optional[int] = None
+    gradio_max_new_tokens: Optional[int] = None
+    gradio_temperature: Optional[float] = None
+
+
 # pylint: disable=too-many-public-methods,too-many-ancestors
 class AxolotlInputConfig(
     ModelInputConfig,
@@ -419,6 +433,7 @@ class AxolotlInputConfig(
     WandbConfig,
     MLFlowConfig,
     LISAConfig,
+    GradioConfig,
     RemappedParameters,
     DeprecatedParameters,
     BaseModel,
@@ -440,6 +455,7 @@ class AxolotlInputConfig(
     datasets: Optional[conlist(Union[SFTDataset, DPODataset], min_length=1)] = None  # type: ignore
     test_datasets: Optional[conlist(Union[SFTDataset, DPODataset], min_length=1)] = None  # type: ignore
     shuffle_merged_datasets: Optional[bool] = True
+    shuffle_before_split: Optional[bool] = None
     dataset_prepared_path: Optional[str] = None
     dataset_shard_num: Optional[int] = None
     dataset_shard_idx: Optional[int] = None
@@ -485,6 +501,8 @@ class AxolotlInputConfig(
 
     loss_watchdog_threshold: Optional[float] = None
     loss_watchdog_patience: Optional[int] = None
+
+    save_on_end: Optional[bool] = None
 
     bf16: Optional[Union[Literal["auto"], bool]] = "auto"
     fp16: Optional[bool] = None
@@ -1004,13 +1022,12 @@ class AxolotlInputConfig(
             )
 
         if data.get("eval_causal_lm_metrics"):
-            supported_metrics = ["sacrebleu", "comet", "ter", "chrf"]
             if not isinstance(data.get("eval_causal_lm_metrics"), list):
                 raise ValueError("eval_causal_lm_metrics must be a list")
             # only ["sacrebleu", "comet", "ter", "chrf"] supported
-            if set(data.get("eval_causal_lm_metrics")) - set(supported_metrics):
+            if set(data.get("eval_causal_lm_metrics")) - SUPPORTED_METRICS:
                 raise ValueError(
-                    f"eval_causal_lm_metrics must be one of {supported_metrics}"
+                    f"eval_causal_lm_metrics must be one of {SUPPORTED_METRICS}"
                 )
         return data
 
