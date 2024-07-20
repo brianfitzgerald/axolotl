@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import math
 import os
 import re
 import traceback
@@ -433,7 +434,9 @@ def causal_lm_bench_eval_callback_factory(trainer: Trainer, tokenizer):
                 try:
                     # Only pass the kwargs that are in the metric's feature list
                     metric_kwargs = {
-                        k: kwargs[k] for k in metric._feature_names() if k in kwargs
+                        k: kwargs[k]
+                        for k in metric._feature_names()  # pylint: disable=protected-access
+                        if k in kwargs
                     }
                     metric_score = metric.compute(**metric_kwargs)
                     return (
@@ -828,8 +831,26 @@ class SaveAxolotlConfigtoWandBCallback(TrainerCallback):
         return control
 
 
-class SaveModelOnTrainEndCallback(TrainerCallback):
+class SaveModelCallback(TrainerCallback):
     """Callback to save model on train end"""
+
+    def on_step_end(  # pylint: disable=unused-argument
+        self,
+        args: TrainingArguments,
+        state: TrainerState,
+        control: TrainerControl,
+        **kwargs,
+    ):
+        # Save
+        if state.global_step >= state.max_steps:
+            control.should_save = True
+        elif (
+            args.save_strategy == IntervalStrategy.STEPS
+            and state.save_steps < 1.0
+            and state.global_step % math.ceil(state.save_steps * state.max_steps) == 0
+        ):
+            # workaround to save model on fractional save_steps
+            control.should_save = True
 
     def on_train_end(  # pylint: disable=unused-argument
         self, args, state, control, **kwargs

@@ -10,14 +10,17 @@ from axolotl.monkeypatch.mixtral import patch_mixtral_moe_forward_zero3
 from axolotl.monkeypatch.utils import get_unpad_data
 
 SUPPORTED_MULTIPACK_MODEL_TYPES = [
+    "llama",
     "mixtral",
     "qwen2",
     "qwen2_moe",
     "falcon",
     "phi",
     "gemma",
+    "gemma2",
     "gemmoe",
     "starcoder2",
+    "deepseek_v2",
 ]
 
 
@@ -28,6 +31,10 @@ def patch_for_multipack(model_type, model_name=None):
         )
         if is_deepspeed_zero3_enabled():
             patch_mixtral_moe_forward_zero3()
+    elif model_type == "llama":
+        transformers.models.llama.modeling_llama._get_unpad_data = (  # pylint: disable=protected-access
+            get_unpad_data
+        )
     elif model_type == "qwen2":
         transformers.models.qwen2.modeling_qwen2._get_unpad_data = (  # pylint: disable=protected-access
             get_unpad_data
@@ -48,6 +55,10 @@ def patch_for_multipack(model_type, model_name=None):
         transformers.models.gemma.modeling_gemma._get_unpad_data = (  # pylint: disable=protected-access
             get_unpad_data
         )
+    elif model_type == "gemma2":
+        transformers.models.gemma2.modeling_gemma2._get_unpad_data = (  # pylint: disable=protected-access
+            get_unpad_data
+        )
     elif model_type == "starcoder2":
         transformers.models.starcoder2.modeling_starcoder2._get_unpad_data = (  # pylint: disable=protected-access
             get_unpad_data
@@ -56,6 +67,8 @@ def patch_for_multipack(model_type, model_name=None):
         patch_remote(model_name, ".configuration_gemmoe", ".modeling_gemmoe")
     elif model_type == "jamba":
         patch_remote(model_name, ".configuration_jamba", ".modeling_jamba")
+    elif model_type == "deepseek_v2":
+        patch_remote(model_name, ".configuration_deepseek", ".modeling_deepseek")
 
 
 def patch_remote(model_name, config_name, modeling_name):

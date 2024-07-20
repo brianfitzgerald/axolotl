@@ -1,7 +1,7 @@
 """Module for models and model loading"""
 
 # pylint: disable=too-many-lines
-
+import gc
 import logging
 import math
 import os
@@ -94,7 +94,7 @@ def check_model_config(cfg: DictDefault, model_config: Union[AutoConfig, DictDef
             "Please make sure to point to a GPTQ model."
         )
 
-    if not cfg.gptq and quant_config_exists:
+    if not cfg.gptq and quant_config_exists and not cfg.load_in_4bit:
         raise ValueError(
             "model_config.quantization_config is set but `gptq` flag is not. "
             "Please use the `gptq` flag to train quantized model or point to a non-quantized model."
@@ -348,6 +348,31 @@ def load_model(
         and cfg.sample_packing
     ):
         patch_for_multipack(cfg.model_config_type, model_name=cfg.base_model)
+
+        if cfg.is_llama_derived_model:
+            from axolotl.monkeypatch.llama_attn_hijack_flash import (
+                patch_llama_cross_entropy,
+                patch_llama_rms_norm,
+            )
+
+            if cfg.flash_attn_cross_entropy:
+                patch_llama_cross_entropy()
+            if cfg.flash_attn_rms_norm:
+                patch_llama_rms_norm()
+            elif cfg.unsloth_rms_norm:
+                from axolotl.monkeypatch.unsloth_ import patch_unsloth_layernorm
+
+                patch_unsloth_layernorm()
+            if cfg.unsloth_cross_entropy_loss:
+                from axolotl.monkeypatch.unsloth_ import (
+                    integrate_cross_entropy_loss_patch,
+                )
+
+                integrate_cross_entropy_loss_patch()
+            if cfg.unsloth_lora_qkv or cfg.unsloth_lora_o:
+                from axolotl.monkeypatch.unsloth_ import patch_self_attn_lora
+
+                patch_self_attn_lora()
     elif cfg.is_llama_derived_model:
         # Modify all llama derived models in one block
 
@@ -372,6 +397,12 @@ def load_model(
                     rms_norm=cfg.flash_attn_rms_norm,
                     use_shifted_sparse_attn=True,
                 )
+            elif cfg.flash_attn_cross_entropy or cfg.flash_attn_rms_norm:
+                replace_llama_attn_with_flash_attn(
+                    packed=False,
+                    cross_entropy=cfg.flash_attn_cross_entropy,
+                    rms_norm=cfg.flash_attn_rms_norm,
+                )
         elif cfg.xformers_attention:
             from axolotl.monkeypatch.llama_attn_hijack_xformers import (
                 hijack_llama_attention,
@@ -390,6 +421,16 @@ def load_model(
             raise NotImplementedError(
                 "Shifted-sparse attention not currently implemented without flash attention."
             )
+
+        if cfg.unsloth_cross_entropy_loss:
+            from axolotl.monkeypatch.unsloth_ import integrate_cross_entropy_loss_patch
+
+            integrate_cross_entropy_loss_patch()
+
+        if cfg.unsloth_lora_qkv or cfg.unsloth_lora_o:
+            from axolotl.monkeypatch.unsloth_ import patch_self_attn_lora
+
+            patch_self_attn_lora()
 
     # Modify mistral derived models
     if (
@@ -560,9 +601,11 @@ def load_model(
 
     try:
         skip_move_to_device = False
-        if (
-            cfg.fsdp and cfg.fsdp_config.fsdp_cpu_ram_efficient_loading
-        ) and not qlora_fsdp:
+        if (  # pylint: disable=condition-evals-to-constant)
+            (cfg.fsdp and cfg.fsdp_config.fsdp_cpu_ram_efficient_loading)
+            and not qlora_fsdp
+            and False
+        ):
             model = load_sharded_model(
                 base_model,
                 model_config,
@@ -588,9 +631,12 @@ def load_model(
             and not cfg.trust_remote_code
             and not cfg.gptq
         ):
-            from transformers import LlamaForCausalLM
+            if qlora_fsdp and cfg.fsdp_config.fsdp_cpu_ram_efficient_loading:
+                skip_move_to_device = True
+                if "device_map" in model_kwargs:
+                    del model_kwargs["device_map"]
 
-            model = LlamaForCausalLM.from_pretrained(
+            model = AutoModelForCausalLM.from_pretrained(
                 base_model,
                 config=model_config,
                 **model_kwargs,
@@ -623,7 +669,11 @@ def load_model(
                 base_model,
                 **model_kwargs,
             )
-        elif model_type and not cfg.trust_remote_code:
+        elif (
+            model_type
+            and model_type != "AutoModelForCausalLM"
+            and not cfg.trust_remote_code
+        ):
             if cfg.gptq:
                 model = AutoModelForCausalLM.from_pretrained(
                     base_model,
@@ -664,6 +714,7 @@ def load_model(
                 )
             else:
                 if qlora_fsdp and cfg.fsdp_config.fsdp_cpu_ram_efficient_loading:
+                    # disabling either of these two still leads to VRAM spike before setting back down
                     skip_move_to_device = True
                     if "device_map" in model_kwargs:
                         del model_kwargs["device_map"]
@@ -794,7 +845,7 @@ def load_model(
     if not reference_model or cfg.lora_model_dir:
         # if we're not loading the reference model, then we're loading the model for training
         # then the dpo trainer doesn't want the peft model loaded over it, it just wants the lora/peft config
-        if cfg.adapter and cfg.rl in ["dpo", "ipo", "kto_pair"] and not cfg.merge_lora:
+        if cfg.adapter and cfg.rl in ["dpo", "ipo", "kto"] and not cfg.merge_lora:
             _, lora_config = load_lora(model, cfg, inference=False, config_only=True)
         else:
             model, lora_config = load_adapter(model, cfg, cfg.adapter)
@@ -828,6 +879,24 @@ def load_model(
 
     if cfg.adapter is not None:
         log_gpu_memory_usage(LOG, "after adapters", model.device)
+
+    if cfg.unsloth_lora_mlp:
+        from axolotl.monkeypatch.unsloth_ import integrate_lora_mlp_patch
+
+        integrate_lora_mlp_patch(model)
+    if cfg.unsloth_lora_qkv or cfg.unsloth_lora_o:
+        from axolotl.monkeypatch.unsloth_ import integrate_lora_patch
+
+        integrate_lora_patch(model, cfg)
+
+    if cfg.unsloth_rope:
+        from axolotl.monkeypatch.unsloth_ import integrate_rope_embeddings
+
+        integrate_rope_embeddings()
+
+    for _ in range(3):
+        gc.collect()
+        torch.cuda.empty_cache()
 
     # TODO resume_from_checkpoint handling
     return model, lora_config

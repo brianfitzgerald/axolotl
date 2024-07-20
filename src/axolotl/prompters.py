@@ -41,7 +41,7 @@ class AlpacaPrompter(Prompter):
     system_format: str = "{system}"
     turn_format: str
     turn_no_input_format: str
-    prompt_style: Optional[PromptStyle] = None
+    prompt_style: Optional[str] = None
 
     def __init__(self, prompt_style: Optional[str] = PromptStyle.INSTRUCT.value):
         self.prompt_style = prompt_style if prompt_style else PromptStyle.INSTRUCT.value
@@ -66,10 +66,8 @@ class AlpacaPrompter(Prompter):
             )
             self.system_format = "<|im_start|>system\n{system}<|im_end|>\n"
         elif self.prompt_style == PromptStyle.PHI.value:
-            self.turn_format = "<|user|>\n{instruction}\n{input}\n<|assistant|>\n"
-            self.turn_no_input_format = (
-                "<|user|>\n{instruction}<|end|>\n<|assistant|>\n"
-            )
+            self.turn_format = "<|user|>\n{instruction}<|end|>{input}<|assistant|>"
+            self.turn_no_input_format = "<|user|>\n{instruction}<|end|><|assistant|>"
             self.system_format = "<|system|>{system}\n"
 
     def _build_result(self, instruction, input_text, output):
@@ -325,6 +323,7 @@ CONVERSATION_ROLE_FORMAT = {
     "chatml": "<|im_start|>{ROLE}",
     "zephyr": "<|{ROLE}|>",
     "vicuna_v1.1": "{ROLE}",
+    "llama3": "<|start_header_id|>{ROLE}<|end_header_id|>",
 }
 
 
@@ -375,6 +374,7 @@ class ShareGPTPrompter(Prompter):  # pylint: disable=too-few-public-methods
 
         conv = self._conversation.copy()
 
+        original_source = source.copy()
         # Add the conversation system prompt if provided, otherwise use the default one
         if source[0]["from"] == "system":
             conv.set_system_message(source[0]["value"])
@@ -416,8 +416,27 @@ class ShareGPTPrompter(Prompter):  # pylint: disable=too-few-public-methods
                     LOG.warning(f"{SHAREGPT_ASSERTION_FAILED_ROLE}: {sentence}")
 
             conv.append_message(role, sentence["value"])
-
-        return conv.get_turns()
+        turns = list(conv.get_turns())
+        original_source_length = len(original_source)
+        assert len(turns) in [
+            original_source_length - 1,
+            original_source_length,
+            original_source_length + 1,
+        ]
+        if len(turns) == original_source_length + 1:
+            original_source = [{"weight": None}] + original_source
+        elif len(turns) == original_source_length - 1:
+            original_source = original_source[1:]
+        return [
+            (*turn, weight)
+            for turn, weight in zip(
+                turns,
+                [
+                    1 if "weight" not in e or e["weight"] is None else e["weight"]
+                    for e in original_source
+                ],
+            )
+        ]
 
     def build_prompt(self, source) -> Generator[str, None, None]:
         turns = self._build_result(source)
