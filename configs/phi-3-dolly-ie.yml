@@ -56,8 +56,8 @@ save_steps: 10000
 eval_table_size: 4
 eval_batch_size: 2
 eval_sample_packing: false
-eval_max_new_tokens: 32
-eval_causal_lm_metrics: ["perplexity", "ter", "sacrebleu"]
+eval_max_new_tokens: 512
+eval_causal_lm_metrics: ["perplexity"]
 do_causal_lm_eval: true
 
 warmup_ratio: 0.1
