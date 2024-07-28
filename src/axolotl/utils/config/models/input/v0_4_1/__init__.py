@@ -121,6 +121,7 @@ class SFTDataset(BaseModel):
     drop_system_message: Optional[bool] = None
 
     trust_remote_code: Optional[bool] = False
+    message_preprocessor: Optional[str] = None
 
 
 class UserDefinedDPOType(BaseModel):

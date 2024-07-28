@@ -70,6 +70,17 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
 
     _messages = "conversations"
 
+    def __init__(
+        self,
+        prompter: Prompter,
+        tokenizer,
+        train_on_inputs: bool = False,
+        sequence_len: int = 2048,
+        message_preprocessor: Optional[str] = None,
+    ):
+        super().__init__(prompter, tokenizer, train_on_inputs, sequence_len)
+        self.message_preprocessor = message_preprocessor
+
     @property
     def messages(self):
         return self._messages
@@ -98,7 +109,36 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         return tokenized_prompt
 
     def get_conversation_thread(self, prompt):
+        if self.message_preprocessor:
+            if self.message_preprocessor == "entity_extraction":
+                return process_entity_extracton(prompt)
         return prompt[self.messages]
+
+
+ENTITY_EXTRACTION_TUNING_INSTRUCTION = "Extract structured data from the following context in JSON form."
+
+
+def process_entity_extracton(sample):
+
+    conversation = [
+        {
+            "role": "system",
+            "content": ENTITY_EXTRACTION_TUNING_INSTRUCTION,
+        },
+        {
+            "role": "user",
+            "content": sample["context"],
+        },
+        {
+            "role": "user",
+            "content": sample["json_data"],
+        },
+        {
+            "role": "assistant",
+            "content": sample["json_query"],
+        },
+    ]
+    return conversation
 
 
 def load(tokenizer, cfg, ds_cfg: Optional[Dict[str, Any]] = None):
@@ -122,6 +162,12 @@ def load(tokenizer, cfg, ds_cfg: Optional[Dict[str, Any]] = None):
         else False
     )
 
+    message_preprocessor = (
+        ds_cfg["message_preprocessor"]
+        if ds_cfg and "message_preprocessor" in ds_cfg
+        else None
+    )
+
     strategy = ChatTemplateStrategy(
         ChatTemplatePrompter(
             tokenizer,
@@ -134,6 +180,7 @@ def load(tokenizer, cfg, ds_cfg: Optional[Dict[str, Any]] = None):
         tokenizer,
         cfg.train_on_inputs,
         cfg.sequence_len,
+        message_preprocessor,
     )
     if ds_cfg and "field_messages" in ds_cfg and hasattr(strategy, "messages"):
         strategy.messages = ds_cfg["field_messages"]

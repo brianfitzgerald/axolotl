@@ -68,7 +68,7 @@ class TokenizedPromptDataset(Dataset):
             print(
                 tabulate(
                     [[decoded_input_ids, input_ids, labels]],
-                    headers=["Prompt", "Token IDs", "Labels"],
+                    headers=["Prompt", "Input IDs", "Labels"],
                     tablefmt="simple_grid",
                     maxcolwidths=[35, 35, 35, 35],
                 )
