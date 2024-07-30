@@ -115,10 +115,18 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         return prompt[self.messages]
 
 
-ENTITY_EXTRACTION_TUNING_INSTRUCTION = "Extract structured data from the following context in JSON form."
+ENTITY_EXTRACTION_TUNING_INSTRUCTION = (
+    "Extract structured data from the following context in JSON form."
+)
 
 
 def process_entity_extracton(sample):
+
+    # these fields are misnamed in the dataset
+    sample_query = sample["json_data"]
+    sample_data = sample["json_query"]
+
+    completion_msg = f"```json\n{sample_data}\n```"
 
     conversation = [
         {
@@ -131,11 +139,11 @@ def process_entity_extracton(sample):
         },
         {
             "role": "user",
-            "content": sample["json_data"],
+            "content": sample_query,
         },
         {
             "role": "assistant",
-            "content": sample["json_query"],
+            "content": completion_msg,
         },
     ]
     return conversation
