@@ -3,7 +3,7 @@ trust_remote_code: true
 model_type: AutoModelForCausalLM
 tokenizer_type: AutoTokenizer
 chat_template: phi_3
-wandb_name: phi-3-dolly-ie
+wandb_name: new-tokenizer-working
 disable_save_on_terminate: true
 
 load_in_8bit: false
@@ -17,6 +17,7 @@ datasets:
     message_preprocessor: entity_extraction
     message_field_role: role
     message_field_content: content
+    roles_to_train: ["assistant"]
 
 dataset_prepared_path: ./prepared-datasets/dolly_entity_extraction
 val_set_size: 16
@@ -27,8 +28,8 @@ sequence_len: 4096
 sample_packing: false
 pad_to_sequence_len: false
 
-gradient_accumulation_steps: 4
-micro_batch_size: 8
+gradient_accumulation_steps: 2
+micro_batch_size: 16
 num_epochs: 100
 optimizer: paged_adamw_32bit
 adam_beta2: 0.95

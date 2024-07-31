@@ -203,7 +203,7 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         self._messages = messages
 
     def tokenize_prompt(self, prompt):
-        turns = prompt[self.messages]
+        turns = self.get_conversation_thread(prompt)
         input_ids = self.prompter.build_prompt(turns)
         labels = [IGNORE_TOKEN_ID] * len(input_ids)
 
