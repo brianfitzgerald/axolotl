@@ -357,10 +357,10 @@ def process_entity_extracton(sample):
     completion_msg = f"```json\n{sample_data}\n```"
 
     conversation = [
-        {
-            "role": "system",
-            "content": ENTITY_EXTRACTION_TUNING_INSTRUCTION,
-        },
+        # {
+        #     "role": "system",
+        #     "content": ENTITY_EXTRACTION_TUNING_INSTRUCTION,
+        # },
         {
             "role": "user",
             "content": sample["context"],

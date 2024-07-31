@@ -3,7 +3,7 @@ trust_remote_code: true
 model_type: AutoModelForCausalLM
 tokenizer_type: AutoTokenizer
 chat_template: phi_3
-wandb_name: new-tokenizer-working
+wandb_name: no-system-prompt-lower-lr
 disable_save_on_terminate: true
 
 load_in_8bit: false
@@ -30,13 +30,13 @@ pad_to_sequence_len: false
 
 gradient_accumulation_steps: 2
 micro_batch_size: 16
-num_epochs: 100
+num_epochs: 4
 optimizer: paged_adamw_32bit
 adam_beta2: 0.95
 adam_epsilon: 0.00001
 max_grad_norm: 1.0
 lr_scheduler: linear
-learning_rate: 1e-4
+learning_rate: 1e-5
 
 fp16: true
 
@@ -52,7 +52,7 @@ gradient_checkpointing_kwargs:
 logging_steps: 1
 flash_attention: true
 
-eval_steps: 500
+eval_steps: 100
 save_steps: 5000
 eval_table_size: 4
 eval_batch_size: 4
