@@ -247,10 +247,12 @@ class OpenAssistantPromptTokenizingStrategy(InstructionPromptTokenizingStrategy)
     """
 
     def parse_instruction_fields(self, prompt) -> Tuple[str, str, str]:
+        instruction = prompt["instruction"] or prompt["INSTRUCTION"]
+        response = prompt["response"] or prompt["RESPONSE"]
         return (
-            prompt["INSTRUCTION"],
+            instruction,
             "",
-            prompt["RESPONSE"],
+            response,
         )
 
 
