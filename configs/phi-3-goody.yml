@@ -3,14 +3,15 @@ trust_remote_code: true
 model_type: AutoModelForCausalLM
 tokenizer_type: AutoTokenizer
 disable_save_on_terminate: true
-wandb_name: goody2-partial-dataset
+wandb_name: weave_dev_run
+weave_log_eval: true
 
 datasets:
   - path: roborovski/open-goody2
     type: oasst
 
 dataset_prepared_path: ./prepared-datasets/goody
-val_set_size: 32
+val_set_size: 4
 output_dir: ./out
 shuffle_before_split: true
 
@@ -20,7 +21,7 @@ pad_to_sequence_len: false
 
 micro_batch_size: 32
 gradient_accumulation_steps: 1
-num_epochs: 500
+num_epochs: 50
 optimizer: paged_adamw_32bit
 adam_beta2: 0.95
 adam_epsilon: 0.00001
@@ -45,6 +46,7 @@ eval_batch_size: 4
 eval_sample_packing: false
 eval_max_new_tokens: 512
 eval_causal_lm_metrics: ["perplexity", "ter"]
+do_causal_lm_eval: true
 
 warmup_ratio: 0.2
 weight_decay: 0.1

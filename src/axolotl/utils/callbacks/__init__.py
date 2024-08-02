@@ -9,7 +9,8 @@ import re
 import traceback
 from shutil import copyfile
 from tempfile import NamedTemporaryFile
-from typing import TYPE_CHECKING, Any, Dict, List
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
+import asyncio
 
 import evaluate
 import numpy as np
@@ -30,6 +31,8 @@ from transformers import (
     TrainingArguments,
 )
 from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR, IntervalStrategy
+import weave
+from weave import Evaluation
 
 from axolotl.utils import is_mlflow_available
 from axolotl.utils.bench import log_gpu_memory_usage
@@ -571,14 +574,37 @@ def causal_lm_bench_eval_callback_factory(trainer: Trainer, tokenizer):
     return CausalLMBenchEvalCallback
 
 
-def clean_message(message: str) -> str:
+def log_evaluation_results_to_weave(
+    row_wise_samples: List[Tuple],
+    metrics: Optional[Dict[str, float]] = None,
+):
     """
-    Clean up consecutive spaces, tabs, and newlines in a message with a JSON dict.
+    Log evaluation results to Weave. Weave expects a function to be called for each evaluation, so this mocks that flow.
     """
-    message = message.strip()
-    message = re.sub(r"\n+|\t+", "", message)
-    message = re.sub(r"  +", " ", message)
-    return message
+
+    prompt_to_sample = {}
+    dataset = []
+    for prompt, correct, predicted_gen, _ in row_wise_samples:
+        prompt_to_sample[prompt] = predicted_gen
+        dataset.append({"prompt": prompt, "expected": correct})
+
+    @weave.op()
+    def mock_weave_eval_function(prompt):
+        return prompt_to_sample[prompt]
+
+    evaluation = Evaluation(dataset=dataset)
+
+    print("log to weave")
+    # TOOD add metadata and attributes
+    asyncio.run(evaluation.evaluate(mock_weave_eval_function))
+
+
+TABLE_ROWS = [
+    "Prompt",
+    "Correct Completion",
+    "Predicted Completion (model.generate)",
+    "Predicted Completion (trainer.prediction_step)",
+]
 
 
 def log_prediction_callback_factory(trainer: Trainer, tokenizer, logger: str):
@@ -713,10 +739,12 @@ def log_prediction_callback_factory(trainer: Trainer, tokenizer, logger: str):
                         prompt_token_ids_list, skip_special_tokens=print_special_tokens
                     )
                     completion_texts = tokenizer.batch_decode(
-                        completion_token_ids_list, skip_special_tokens=print_special_tokens
+                        completion_token_ids_list,
+                        skip_special_tokens=print_special_tokens,
                     )
                     pred_step_texts = tokenizer.batch_decode(
-                        pred_step_token_ids_list, skip_special_tokens=print_special_tokens
+                        pred_step_token_ids_list,
+                        skip_special_tokens=print_special_tokens,
                     )
 
                     with torch.no_grad():
@@ -740,7 +768,8 @@ def log_prediction_callback_factory(trainer: Trainer, tokenizer, logger: str):
                         )
 
                     predicted_texts = tokenizer.batch_decode(
-                        prediction_without_prompt_tokens_list, skip_special_tokens=print_special_tokens
+                        prediction_without_prompt_tokens_list,
+                        skip_special_tokens=print_special_tokens,
                     )
 
                     for (
@@ -761,6 +790,17 @@ def log_prediction_callback_factory(trainer: Trainer, tokenizer, logger: str):
                             "Predicted Completion (trainer.prediction_step)"
                         ].append(pred_step_text)
                         row_index += 1
+
+                row_wise_samples = list(
+                    zip(
+                        table_data[TABLE_ROWS[0]],
+                        table_data[TABLE_ROWS[1]],
+                        table_data[TABLE_ROWS[2]],
+                        table_data[TABLE_ROWS[3]],
+                    )
+                )
+                if self.cfg.weave_log_eval:
+                    log_evaluation_results_to_weave(row_wise_samples)
                 if logger == "wandb":
                     wandb.run.log({f"{name} - Predictions vs Ground Truth": pd.DataFrame(table_data)})  # type: ignore[attr-defined]
                 elif logger == "mlflow" and is_mlflow_available():
@@ -775,25 +815,10 @@ def log_prediction_callback_factory(trainer: Trainer, tokenizer, logger: str):
                         tracking_uri=tracking_uri,
                     )
                 else:
-                    row_wise_samples = list(
-                        zip(
-                            table_data["Prompt"],
-                            table_data["Correct Completion"],
-                            table_data["Predicted Completion (model.generate)"],
-                            table_data[
-                                "Predicted Completion (trainer.prediction_step)"
-                            ],
-                        )
-                    )
                     print(
                         tabulate(
                             row_wise_samples,
-                            headers=[
-                                "Prompt",
-                                "Correct Completion",
-                                "Predicted Completion (model.generate)",
-                                "Predicted Completion (trainer.prediction_step)",
-                            ],
+                            headers=TABLE_ROWS,
                             tablefmt="simple_grid",
                             maxcolwidths=[35, 35, 35, 35],
                         )

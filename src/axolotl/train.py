@@ -17,7 +17,7 @@ from peft import PeftModel
 from pkg_resources import get_distribution  # type: ignore
 from transformers import PreTrainedModel, PreTrainedTokenizer
 from transformers.integrations.deepspeed import is_deepspeed_zero3_enabled
-
+import weave
 from axolotl.common.cli import TrainerCliArgs
 from axolotl.core.tokenizer_utils import fix_untrained_tokens
 from axolotl.logging_config import configure_logging
@@ -58,9 +58,14 @@ def train(
     torch_major, torch_minor = int(torch_version[0]), int(torch_version[1])
     if torch_major == 2 and torch_minor >= 2:
         if os.getenv("PYTORCH_CUDA_ALLOC_CONF") is None:
-            os.environ[
-                "PYTORCH_CUDA_ALLOC_CONF"
-            ] = "expandable_segments:True,roundup_power2_divisions:16"
+            os.environ["PYTORCH_CUDA_ALLOC_CONF"] = (
+                "expandable_segments:True,roundup_power2_divisions:16"
+            )
+
+    if cfg.weave_log_eval:
+        weave.init(cfg.wandb_project)
+        LOG.info("Logging evals to Weave.")
+
 
     # load the tokenizer first
     LOG.debug(

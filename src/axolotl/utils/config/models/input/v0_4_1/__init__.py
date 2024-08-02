@@ -470,6 +470,9 @@ class WandbConfig(BaseModel):
 
         return data
 
+class WeaveConfig(BaseModel):
+    weave_log_eval: Optional[bool] = None
+
 
 class GradioConfig(BaseModel):
     """Gradio configuration subset"""
@@ -490,6 +493,7 @@ class AxolotlInputConfig(
     ReLoRAConfig,
     HyperparametersConfig,
     WandbConfig,
+    WeaveConfig,
     MLFlowConfig,
     LISAConfig,
     GradioConfig,
