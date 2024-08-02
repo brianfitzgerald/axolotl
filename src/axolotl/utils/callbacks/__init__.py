@@ -575,6 +575,8 @@ def causal_lm_bench_eval_callback_factory(trainer: Trainer, tokenizer):
 
 
 def log_evaluation_results_to_weave(
+    run_name: str,
+    step: int,
     row_wise_samples: List[Tuple],
     metrics: Optional[Dict[str, float]] = None,
 ):
@@ -595,8 +597,9 @@ def log_evaluation_results_to_weave(
     evaluation = Evaluation(dataset=dataset)
 
     print("log to weave")
-    # TOOD add metadata and attributes
-    asyncio.run(evaluation.evaluate(mock_weave_eval_function))
+    with weave.attributes({"run_name": run_name, "step": step}):
+        # TOOD add metadata and attributes
+        asyncio.run(evaluation.evaluate(mock_weave_eval_function))
 
 
 TABLE_ROWS = [
@@ -800,7 +803,7 @@ def log_prediction_callback_factory(trainer: Trainer, tokenizer, logger: str):
                     )
                 )
                 if self.cfg.weave_log_eval:
-                    log_evaluation_results_to_weave(row_wise_samples)
+                    log_evaluation_results_to_weave(self.cfg.wandb_name, state.global_step, row_wise_samples)
                 if logger == "wandb":
                     wandb.run.log({f"{name} - Predictions vs Ground Truth": pd.DataFrame(table_data)})  # type: ignore[attr-defined]
                 elif logger == "mlflow" and is_mlflow_available():
