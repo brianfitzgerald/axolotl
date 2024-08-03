@@ -1,10 +1,11 @@
-base_model: microsoft/Phi-3-mini-128k-instruct
+base_model: google/gemma-1.1-2b-it
 trust_remote_code: true
 model_type: AutoModelForCausalLM
 tokenizer_type: AutoTokenizer
-chat_template: phi_3
-wandb_name: no-system-prompt-lower-lr
+chat_template: gemma
+wandb_name: gemma-test
 disable_save_on_terminate: true
+weave_log_eval: true
 
 load_in_8bit: false
 load_in_4bit: false
@@ -13,7 +14,7 @@ strict: false
 datasets:
   - path: roborovski/dolly-entity-extraction
     type: chat_template
-    chat_template: phi_3
+    chat_template: gemma
     message_preprocessor: entity_extraction
     message_field_role: role
     message_field_content: content
