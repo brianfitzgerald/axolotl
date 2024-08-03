@@ -1,6 +1,7 @@
 """
 CLI to run inference on a trained model
 """
+
 from pathlib import Path
 
 import fire
@@ -16,7 +17,9 @@ from axolotl.cli import (
 from axolotl.common.cli import TrainerCliArgs
 
 
-def do_cli(config: Path = Path("examples/"), gradio=False, **kwargs):
+def do_cli(
+    config: Path = Path("examples/"), gradio: bool = False, chat: bool = False, **kwargs
+):
     # pylint: disable=duplicate-code
     print_axolotl_text_art()
     parsed_cfg = load_cfg(config, **kwargs)
@@ -27,8 +30,11 @@ def do_cli(config: Path = Path("examples/"), gradio=False, **kwargs):
     )
     parsed_cli_args.inference = True
 
+    if chat and not gradio:
+        raise ValueError("Must use gradio for chat mode")
+
     if gradio:
-        do_inference_gradio(cfg=parsed_cfg, cli_args=parsed_cli_args)
+        do_inference_gradio(chat=chat, cfg=parsed_cfg, cli_args=parsed_cli_args)
     else:
         do_inference(cfg=parsed_cfg, cli_args=parsed_cli_args)
 

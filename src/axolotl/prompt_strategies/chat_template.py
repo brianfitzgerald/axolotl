@@ -340,6 +340,8 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         if self.message_preprocessor:
             if self.message_preprocessor == "entity_extraction":
                 return process_entity_extracton(prompt)
+            if self.message_preprocessor == "goody":
+                return process_goody(prompt)
         return prompt[self.messages]
 
 
@@ -348,7 +350,7 @@ ENTITY_EXTRACTION_TUNING_INSTRUCTION = (
 )
 
 
-def process_entity_extracton(sample):
+def process_entity_extracton(sample: dict) -> List[Dict[str, str]]:
 
     # these fields are misnamed in the dataset
     sample_query = sample["json_data"]
@@ -357,10 +359,6 @@ def process_entity_extracton(sample):
     completion_msg = f"```json\n{sample_data}\n```"
 
     conversation = [
-        # {
-        #     "role": "system",
-        #     "content": ENTITY_EXTRACTION_TUNING_INSTRUCTION,
-        # },
         {
             "role": "user",
             "content": sample["context"],
@@ -372,6 +370,21 @@ def process_entity_extracton(sample):
         {
             "role": "assistant",
             "content": completion_msg,
+        },
+    ]
+    return conversation
+
+
+def process_goody(sample: dict) -> List[Dict[str, str]]:
+
+    conversation = [
+        {
+            "role": "user",
+            "content": sample["instruction"],
+        },
+        {
+            "role": "assistant",
+            "content": sample["response"],
         },
     ]
     return conversation

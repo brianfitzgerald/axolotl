@@ -4,16 +4,22 @@ model_type: AutoModelForCausalLM
 tokenizer_type: AutoTokenizer
 chat_template: gemma
 disable_save_on_terminate: true
-wandb_name: weave_dev_run
-weave_log_eval: true
+wandb_name: gemnma_chat_template
+add_random_suffix_to_run_name: true
+eval_print_special_tokens: true
+output_dir: ./out/goody
 
 datasets:
   - path: roborovski/open-goody2
-    type: oasst
+    type: chat_template
+    chat_template: gemma
+    message_preprocessor: goody
+    message_field_role: role
+    message_field_content: content
+    roles_to_train: ["assistant"]
 
 dataset_prepared_path: ./prepared-datasets/goody
 val_set_size: 4
-output_dir: ./out
 shuffle_before_split: true
 
 sequence_len: 2048
@@ -30,7 +36,7 @@ max_grad_norm: 1.0
 lr_scheduler: linear
 learning_rate: 5e-6
 
-fp16: true
+bf16: true
 
 seed: 1010101
 

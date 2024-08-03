@@ -451,6 +451,7 @@ class WandbConfig(BaseModel):
 
     use_wandb: Optional[bool] = None
     wandb_name: Optional[str] = None
+    add_random_suffix_to_run_name: Optional[bool] = None
     wandb_run_id: Optional[str] = None
     wandb_mode: Optional[str] = None
     wandb_project: Optional[str] = None
@@ -556,6 +557,7 @@ class AxolotlInputConfig(
 
     eval_table_size: Optional[int] = None
     eval_max_new_tokens: Optional[int] = None
+    eval_print_special_tokens: Optional[bool] = None
     do_causal_lm_eval: Optional[bool] = None
     eval_causal_lm_metrics: Optional[List[str]] = None
     do_bench_eval: Optional[bool] = None

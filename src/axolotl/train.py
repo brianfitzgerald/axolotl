@@ -63,6 +63,8 @@ def train(
             )
 
     if cfg.weave_log_eval:
+        if not cfg.wandb_project:
+            raise ValueError("wandb_project must be set to use Weave logging.")
         weave.init(cfg.wandb_project)
         LOG.info("Logging evals to Weave.")
 

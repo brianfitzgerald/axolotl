@@ -16,6 +16,8 @@ from dataclasses import dataclass, field
 from functools import wraps
 from pathlib import Path
 from typing import Dict, List, Literal, Optional, Type, Union
+import string
+import random
 
 import torch
 import transformers
@@ -1423,9 +1425,12 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             report_to.append("tensorboard")
 
         training_arguments_kwargs["report_to"] = report_to
-        training_arguments_kwargs["run_name"] = (
-            self.cfg.wandb_name if self.cfg.use_wandb else None
-        )
+        run_name = self.cfg.wandb_name if self.cfg.use_wandb else None
+        if self.cfg.add_random_suffix_to_run_name:
+            suffix = "".join(random.choices(string.ascii_letters + string.digits, k=4))
+            run_name = f"{run_name}-{suffix}"
+            self.cfg.wandb_name = run_name
+        training_arguments_kwargs["run_name"] = run_name
         training_arguments_kwargs["optim"] = (
             self.cfg.optimizer if self.cfg.optimizer else "adamw_hf"
         )

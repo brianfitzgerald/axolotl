@@ -32,7 +32,7 @@ from transformers import (
 )
 from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR, IntervalStrategy
 import weave
-from weave import Evaluation
+from weave import Evaluation as WeaveBaseEvaluation, Model as WeaveBaseModel
 
 from axolotl.utils import is_mlflow_available
 from axolotl.utils.bench import log_gpu_memory_usage
@@ -165,6 +165,12 @@ class LossWatchDogCallback(TrainerCallback):
             else:
                 self.violations = 0
         return control
+
+
+def _should_skip_special_tokens(cfg) -> bool:
+    return not bool(
+        cfg.eval_print_special_tokens and cfg.eval_print_special_tokens == True
+    )
 
 
 def bench_eval_callback_factory(trainer, tokenizer):
@@ -407,9 +413,6 @@ def causal_lm_bench_eval_callback_factory(trainer: Trainer, tokenizer):
             trainer.model.eval()
             device = torch.device(self.cfg.device)
 
-            # TODO make this a config param
-            print_special_tokens = False
-
             # pylint: disable=duplicate-code
             generation_config = GenerationConfig(
                 max_new_tokens=self.cfg.eval_max_new_tokens,
@@ -480,6 +483,8 @@ def causal_lm_bench_eval_callback_factory(trainer: Trainer, tokenizer):
             def predict_with_generate():
                 eval_src, eval_pred, eval_ref = [], [], []
 
+                skip_special_tokens = _should_skip_special_tokens(self.cfg)
+
                 for batch in tqdm(eval_dataloader):
                     batch_labels = batch["labels"].to(device)
                     batch_input_ids = batch["input_ids"].to(device)
@@ -524,11 +529,12 @@ def causal_lm_bench_eval_callback_factory(trainer: Trainer, tokenizer):
                             completion_token_ids_list.append(completion_token_ids)
 
                     prompt_texts = tokenizer.batch_decode(
-                        prompt_token_ids_list, skip_special_tokens=print_special_tokens
+                        prompt_token_ids_list,
+                        skip_special_tokens=skip_special_tokens,
                     )
                     completion_texts = tokenizer.batch_decode(
                         completion_token_ids_list,
-                        skip_special_tokens=print_special_tokens,
+                        skip_special_tokens=skip_special_tokens,
                     )
 
                     with torch.no_grad():
@@ -554,7 +560,7 @@ def causal_lm_bench_eval_callback_factory(trainer: Trainer, tokenizer):
 
                     predicted_texts = tokenizer.batch_decode(
                         prediction_without_prompt_tokens_list,
-                        skip_special_tokens=print_special_tokens,
+                        skip_special_tokens=skip_special_tokens,
                     )
 
                     eval_src.extend(prompt_texts)
@@ -575,6 +581,7 @@ def causal_lm_bench_eval_callback_factory(trainer: Trainer, tokenizer):
 
 
 def log_evaluation_results_to_weave(
+    base_model_name: str,
     run_name: str,
     step: int,
     row_wise_samples: List[Tuple],
@@ -590,16 +597,24 @@ def log_evaluation_results_to_weave(
         prompt_to_sample[prompt] = predicted_gen
         dataset.append({"prompt": prompt, "expected": correct})
 
-    @weave.op()
-    def mock_weave_eval_function(prompt):
-        return prompt_to_sample[prompt]
+    class WeaveEvaluation(WeaveBaseEvaluation):
+        step: int
+        run_name: str
 
-    evaluation = Evaluation(dataset=dataset)
+    class WeaveModel(WeaveBaseModel):
+        base_model_name: str 
+        fine_tuning_step: int
 
-    print("log to weave")
+        @weave.op()
+        def predict(self, prompt):
+            return prompt_to_sample[prompt]
+
+    model = WeaveModel(base_model_name=base_model_name, fine_tuning_step=step)
+    evaluation = WeaveEvaluation(dataset=dataset, step=step, run_name=run_name)
+
     with weave.attributes({"run_name": run_name, "step": step}):
         # TOOD add metadata and attributes
-        asyncio.run(evaluation.evaluate(mock_weave_eval_function))
+        asyncio.run(evaluation.evaluate(model))
 
 
 TABLE_ROWS = [
@@ -676,8 +691,7 @@ def log_prediction_callback_factory(trainer: Trainer, tokenizer, logger: str):
                 }
                 row_index = 0
 
-                # TODO make this a config param
-                print_special_tokens = False
+                skip_special_tokens = _should_skip_special_tokens(self.cfg)
 
                 for batch in tqdm(table_dataloader):
                     if row_index > eval_table_size:
@@ -739,15 +753,16 @@ def log_prediction_callback_factory(trainer: Trainer, tokenizer, logger: str):
                             pred_step_token_ids_list.append(pred_step_token_ids)
 
                     prompt_texts = tokenizer.batch_decode(
-                        prompt_token_ids_list, skip_special_tokens=print_special_tokens
+                        prompt_token_ids_list,
+                        skip_special_tokens=skip_special_tokens,
                     )
                     completion_texts = tokenizer.batch_decode(
                         completion_token_ids_list,
-                        skip_special_tokens=print_special_tokens,
+                        skip_special_tokens=skip_special_tokens,
                     )
                     pred_step_texts = tokenizer.batch_decode(
                         pred_step_token_ids_list,
-                        skip_special_tokens=print_special_tokens,
+                        skip_special_tokens=skip_special_tokens,
                     )
 
                     with torch.no_grad():
@@ -772,7 +787,7 @@ def log_prediction_callback_factory(trainer: Trainer, tokenizer, logger: str):
 
                     predicted_texts = tokenizer.batch_decode(
                         prediction_without_prompt_tokens_list,
-                        skip_special_tokens=print_special_tokens,
+                        skip_special_tokens=skip_special_tokens,
                     )
 
                     for (
@@ -803,7 +818,9 @@ def log_prediction_callback_factory(trainer: Trainer, tokenizer, logger: str):
                     )
                 )
                 if self.cfg.weave_log_eval:
-                    log_evaluation_results_to_weave(self.cfg.wandb_name, state.global_step, row_wise_samples)
+                    log_evaluation_results_to_weave(
+                        self.cfg.base_model, self.cfg.wandb_name, state.global_step, row_wise_samples
+                    )
                 if logger == "wandb":
                     wandb.run.log({f"{name} - Predictions vs Ground Truth": pd.DataFrame(table_data)})  # type: ignore[attr-defined]
                 elif logger == "mlflow" and is_mlflow_available():
