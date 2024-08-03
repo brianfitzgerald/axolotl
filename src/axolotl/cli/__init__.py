@@ -287,7 +287,7 @@ def do_inference_gradio(
             history_chat_format.append({"role": "assistant", "content": assistant_msg})
         history_chat_format.append({"role": "user", "content": prompt})
         tokenized_pt = tokenizer.apply_chat_template(
-            history_chat_format, return_tensors="pt"
+            history_chat_format, return_tensors="pt", add_generation_prompt=True
         )
 
         model.eval()
@@ -307,7 +307,6 @@ def do_inference_gradio(
                 inputs=tokenized_pt.to(cfg.device),
                 streamer=streamer,
                 generation_config=generation_config,
-                stopping_criteria=StoppingCriteriaList([StopOnTokens([tokenizer.eos_token_id, 0])]),
             )
 
             thread = Thread(target=model.generate, kwargs=generation_kwargs)
