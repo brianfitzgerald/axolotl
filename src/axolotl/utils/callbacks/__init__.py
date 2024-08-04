@@ -29,12 +29,14 @@ from transformers import (
     TrainerControl,
     TrainerState,
     TrainingArguments,
+    StoppingCriteriaList,
 )
 from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR, IntervalStrategy
 import weave
 from weave import Evaluation as WeaveBaseEvaluation, Model as WeaveBaseModel
 
-from axolotl.utils import is_mlflow_available
+
+from axolotl.utils import is_mlflow_available, StopOnTokens
 from axolotl.utils.bench import log_gpu_memory_usage
 from axolotl.utils.callbacks.perplexity import Perplexity
 from axolotl.utils.callbacks.tool_eval import FunctionCallAccuracy
@@ -602,7 +604,7 @@ def log_evaluation_results_to_weave(
         run_name: str
 
     class WeaveModel(WeaveBaseModel):
-        base_model_name: str 
+        base_model_name: str
         fine_tuning_step: int
 
         @weave.op()
@@ -649,6 +651,9 @@ def log_prediction_callback_factory(trainer: Trainer, tokenizer, logger: str):
 
             trainer.model.eval()
             device = torch.device(self.cfg.device)
+            stopping_criteria = StoppingCriteriaList(
+                [StopOnTokens([tokenizer.eos_token_id])]
+            )
 
             # pylint: disable=duplicate-code
             generation_config = GenerationConfig(
@@ -770,7 +775,9 @@ def log_prediction_callback_factory(trainer: Trainer, tokenizer, logger: str):
                             prompt_texts, padding=True, return_tensors="pt"
                         ).to(self.cfg.device)
                         predictions = trainer.model.generate(
-                            **prompt_encoding, generation_config=generation_config
+                            **prompt_encoding,
+                            generation_config=generation_config,
+                            stopping_criteria=stopping_criteria,
                         )
 
                     prediction_all_tokens = predictions["sequences"].cpu().tolist()
@@ -819,7 +826,10 @@ def log_prediction_callback_factory(trainer: Trainer, tokenizer, logger: str):
                 )
                 if self.cfg.weave_log_eval:
                     log_evaluation_results_to_weave(
-                        self.cfg.base_model, self.cfg.wandb_name, state.global_step, row_wise_samples
+                        self.cfg.base_model,
+                        self.cfg.wandb_name,
+                        state.global_step,
+                        row_wise_samples,
                     )
                 if logger == "wandb":
                     wandb.run.log({f"{name} - Predictions vs Ground Truth": pd.DataFrame(table_data)})  # type: ignore[attr-defined]

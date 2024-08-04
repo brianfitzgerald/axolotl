@@ -26,7 +26,6 @@ from transformers import (
     GenerationConfig,
     TextIteratorStreamer,
     TextStreamer,
-    StoppingCriteria,
     StoppingCriteriaList,
 )
 from transformers.utils import is_torch_bf16_gpu_available
@@ -48,6 +47,7 @@ from axolotl.utils.models import load_tokenizer
 from axolotl.utils.tokenization import check_dataset_labels
 from axolotl.utils.trainer import prepare_opinionated_env, prepare_optim_env
 from axolotl.utils.wandb_ import setup_wandb_env_vars
+from axolotl.utils import StopOnTokens
 
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 src_dir = os.path.join(project_root, "src")
@@ -230,21 +230,6 @@ def do_inference(
         print(tokenizer.decode(generated["sequences"].cpu().tolist()[0]))
 
 
-class StopOnTokens(StoppingCriteria):
-
-    def __init__(self, stop_ids: Optional[List[int]] = None):
-        super().__init__()
-        self.stop_ids = stop_ids or [29, 0]
-
-    def __call__(
-        self, input_ids: torch.LongTensor, scores: torch.FloatTensor, **kwargs
-    ) -> bool:
-        for stop_id in self.stop_ids:
-            if input_ids[0][-1] == stop_id:
-                return True
-        return False
-
-
 def do_inference_gradio(
     *,
     chat: bool,
@@ -307,6 +292,7 @@ def do_inference_gradio(
                 inputs=tokenized_pt.to(cfg.device),
                 streamer=streamer,
                 generation_config=generation_config,
+                stopping_criteria=StoppingCriteriaList([StopOnTokens([tokenizer.eos_token_id])]),
             )
 
             thread = Thread(target=model.generate, kwargs=generation_kwargs)
