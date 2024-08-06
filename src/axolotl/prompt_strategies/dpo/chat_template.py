@@ -3,6 +3,7 @@ DPO prompt strategies for using tokenizer chat templates.
 """
 
 from axolotl.utils.chat_templates import chat_templates
+from axolotl.prompt_strategies.message_preprocessor import get_preprocessor
 
 
 def default(
@@ -30,14 +31,18 @@ def default(
             role_map[source] = target
 
     def transform_fn(sample, tokenizer=None):
-        messages = sample[field_messages]
-        messages = [
-            {
-                "role": role_map[m[field_message_role]],
-                "content": m[field_message_content],
-            }
-            for m in messages
-        ]
+        preprocessed = get_preprocessor(ds_cfg.get("preprocessor"), sample)
+        if not preprocessed:
+            messages = sample[field_messages]
+            messages = [
+                {
+                    "role": role_map[m[field_message_role]],
+                    "content": m[field_message_content],
+                }
+                for m in messages
+            ]
+        else:
+            messages = preprocessed
         chosen = {
             "role": role_map[sample[field_chosen][field_message_role]],
             "content": sample[field_chosen][field_message_content],
