@@ -2,24 +2,29 @@ base_model: google/gemma-2-2b-it
 trust_remote_code: true
 model_type: AutoModelForCausalLM
 tokenizer_type: AutoTokenizer
-chat_template: gemma
+
 wandb_name: gemnma_chat_template
-output_dir: ./out/goody
 
 disable_save_on_terminate: true
 add_random_suffix_to_run_name: true
 eval_print_special_tokens: true
+output_dir: ./out/goody-dpo
 
+chat_template: gemma
+rl: dpo
 datasets:
-  - path: roborovski/open-goody2
-    type: chat_template
+  - path: roborovski/open-goody2-dpo
+    type: chat_template.default
     chat_template: gemma
-    message_preprocessor: goody
+    field_messages: conversation
+    field_chosen: chosen
+    field_rejected: rejected
     message_field_role: role
     message_field_content: content
+    message_preprocessor: goody
     roles_to_train: ["assistant"]
 
-dataset_prepared_path: ./prepared-datasets/goody
+dataset_prepared_path: ./prepared-datasets/goody-dpo
 val_set_size: 4
 shuffle_before_split: true
 
@@ -27,23 +32,26 @@ sequence_len: 2048
 sample_packing: false
 pad_to_sequence_len: false
 
-micro_batch_size: 32
-gradient_accumulation_steps: 1
-num_epochs: 10
-optimizer: paged_adamw_32bit
-adam_beta2: 0.95
-adam_epsilon: 0.00001
-max_grad_norm: 1.0
-lr_scheduler: linear
-learning_rate: 5e-6
+adapter: lora
+lora_model_dir:
+lora_r: 64
+lora_alpha: 32
+lora_dropout: 0.05
+lora_target_linear: true
 
-bf16: true
+micro_batch_size: 8
+gradient_accumulation_steps: 1
+num_epochs: 5
+optimizer: adamw_bnb_8bit
+lr_scheduler: cosine
+learning_rate: 2e-4
+
+bf16: auto
+load_in_8bit: true
 
 seed: 1010101
 
 gradient_checkpointing: true
-gradient_checkpointing_kwargs:
-  use_reentrant: True
 logging_steps: 1
 flash_attention: true
 
