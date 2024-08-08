@@ -338,8 +338,12 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         return start_idx, end_idx
 
     def get_conversation_thread(self, prompt):
-        processed = get_preprocessor(self.message_preprocessor, prompt)
-        return processed or prompt[self.messages]
+        out = get_preprocessor(self.message_preprocessor, prompt)
+        if out:
+            # concat conversation and completion
+            return out[0] + [out[1]]
+        return prompt[self.messages]
+
 
 def load(tokenizer, cfg, ds_cfg: Optional[Dict[str, Any]] = None):
     ds_cfg = ds_cfg or {}
