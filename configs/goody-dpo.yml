@@ -42,12 +42,11 @@ lora_target_linear: true
 micro_batch_size: 8
 gradient_accumulation_steps: 1
 num_epochs: 5
-optimizer: adamw_bnb_8bit
+optimizer: paged_adamw_32bit
 lr_scheduler: cosine
 learning_rate: 2e-4
 
 bf16: auto
-load_in_8bit: true
 
 seed: 1010101
 
@@ -64,6 +63,6 @@ eval_max_new_tokens: 512
 eval_causal_lm_metrics: ["perplexity", "ter"]
 do_causal_lm_eval: true
 
-warmup_ratio: 0.2
+warmup_steps: 10
 weight_decay: 0.1
 resize_token_embeddings_to_32x: true
