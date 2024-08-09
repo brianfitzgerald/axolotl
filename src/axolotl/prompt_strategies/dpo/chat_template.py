@@ -3,6 +3,9 @@ DPO prompt strategies for using tokenizer chat templates.
 """
 
 from axolotl.utils.chat_templates import chat_templates
+from axolotl.prompt_strategies.message_preprocessor import (
+    get_dpo_preprocessor,
+)
 
 
 def default(
@@ -10,6 +13,11 @@ def default(
 ):  # pylint: disable=possibly-unused-variable,unused-argument
     ds_cfg = cfg["datasets"][dataset_idx]
     chat_template_str = chat_templates(cfg.chat_template)
+    # HACK to remove the check for alternating roles
+    chat_template_str = chat_template_str.replace(
+        "{% if (message['role'] == 'user') != (loop.index0 % 2 == 0) %}{{ raise_exception('Conversation roles must alternate user/assistant/user/assistant/...') }}{% endif %}",
+        "",
+    )
 
     field_messages = ds_cfg.get("field_messages", "messages")
     field_chosen = ds_cfg.get("field_chosen", "chosen")
@@ -30,22 +38,26 @@ def default(
             role_map[source] = target
 
     def transform_fn(sample, tokenizer=None):
-        messages = sample[field_messages]
-        messages = [
-            {
-                "role": role_map[m[field_message_role]],
-                "content": m[field_message_content],
+        preprocessed = get_dpo_preprocessor(ds_cfg.get("message_preprocessor"), sample)
+        if preprocessed:
+            messages, chosen, rejected = preprocessed
+        else:
+            messages = sample[field_messages]
+            messages = [
+                {
+                    "role": role_map[m[field_message_role]],
+                    "content": m[field_message_content],
+                }
+                for m in messages
+            ]
+            chosen = {
+                "role": role_map[sample[field_chosen][field_message_role]],
+                "content": sample[field_chosen][field_message_content],
             }
-            for m in messages
-        ]
-        chosen = {
-            "role": role_map[sample[field_chosen][field_message_role]],
-            "content": sample[field_chosen][field_message_content],
-        }
-        rejected = {
-            "role": role_map[sample[field_rejected][field_message_role]],
-            "content": sample[field_rejected][field_message_content],
-        }
+            rejected = {
+                "role": role_map[sample[field_rejected][field_message_role]],
+                "content": sample[field_rejected][field_message_content],
+            }
 
         result = {}
         result["prompt"] = tokenizer.apply_chat_template(

@@ -22,7 +22,12 @@ from accelerate.commands.config import config_args
 from art import text2art
 from huggingface_hub import HfApi
 from huggingface_hub.utils import LocalTokenNotFoundError
-from transformers import GenerationConfig, TextIteratorStreamer, TextStreamer
+from transformers import (
+    GenerationConfig,
+    TextIteratorStreamer,
+    TextStreamer,
+    StoppingCriteriaList,
+)
 from transformers.utils import is_torch_bf16_gpu_available
 from transformers.utils.import_utils import _is_package_available
 
@@ -40,8 +45,9 @@ from axolotl.utils.distributed import is_main_process
 from axolotl.utils.mlflow_ import setup_mlflow_env_vars
 from axolotl.utils.models import load_tokenizer
 from axolotl.utils.tokenization import check_dataset_labels
-from axolotl.utils.trainer import prepare_optim_env
+from axolotl.utils.trainer import prepare_opinionated_env, prepare_optim_env
 from axolotl.utils.wandb_ import setup_wandb_env_vars
+from axolotl.utils import StopOnTokens
 
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 src_dir = os.path.join(project_root, "src")
@@ -226,6 +232,7 @@ def do_inference(
 
 def do_inference_gradio(
     *,
+    chat: bool,
     cfg: DictDefault,
     cli_args: TrainerCliArgs,
 ):
@@ -248,42 +255,45 @@ def do_inference_gradio(
 
     model = model.to(cfg.device, dtype=cfg.torch_dtype)
 
-    def generate(instruction):
-        if not instruction:
+    def generate(message: str, history: List):
+        if not message:
             return
         if prompter_module:
             # pylint: disable=stop-iteration-return
             prompt: str = next(
-                prompter_module().build_prompt(instruction=instruction.strip("\n"))
+                prompter_module().build_prompt(instruction=message.strip("\n"))
             )
         else:
-            prompt = instruction.strip()
-        batch = tokenizer(prompt, return_tensors="pt", add_special_tokens=True)
+            prompt = message.strip()
+
+        history_chat_format = []
+        for user_msg, assistant_msg in history:
+            history_chat_format.append({"role": "user", "content": user_msg})
+            history_chat_format.append({"role": "assistant", "content": assistant_msg})
+        history_chat_format.append({"role": "user", "content": prompt})
+        tokenized_pt = tokenizer.apply_chat_template(
+            history_chat_format, return_tensors="pt", add_generation_prompt=True
+        )
 
         model.eval()
         with torch.no_grad():
+            streamer = TextIteratorStreamer(
+                tokenizer, skip_special_tokens=True, skip_prompt=True, timeout=10
+            )
+
             generation_config = GenerationConfig(
-                repetition_penalty=1.1,
                 max_new_tokens=cfg.get("gradio_max_new_tokens", 1024),
-                temperature=cfg.get("gradio_temperature", 0.9),
-                top_p=0.95,
-                top_k=40,
-                bos_token_id=tokenizer.bos_token_id,
-                eos_token_id=tokenizer.eos_token_id,
-                pad_token_id=tokenizer.pad_token_id,
-                do_sample=True,
-                use_cache=True,
                 return_dict_in_generate=True,
                 output_attentions=False,
                 output_hidden_states=False,
                 output_scores=False,
             )
-            streamer = TextIteratorStreamer(tokenizer)
-            generation_kwargs = {
-                "inputs": batch["input_ids"].to(cfg.device),
-                "generation_config": generation_config,
-                "streamer": streamer,
-            }
+            generation_kwargs = dict(
+                inputs=tokenized_pt.to(cfg.device),
+                streamer=streamer,
+                generation_config=generation_config,
+                stopping_criteria=StoppingCriteriaList([StopOnTokens([tokenizer.eos_token_id])]),
+            )
 
             thread = Thread(target=model.generate, kwargs=generation_kwargs)
             thread.start()
@@ -294,12 +304,15 @@ def do_inference_gradio(
                 all_text += new_text
                 yield all_text
 
-    demo = gr.Interface(
-        fn=generate,
-        inputs="textbox",
-        outputs="text",
-        title=cfg.get("gradio_title", "Axolotl Gradio Interface"),
-    )
+    if chat:
+        demo = gr.ChatInterface(generate)
+    else:
+        demo = gr.Interface(
+            fn=generate,
+            inputs="textbox",
+            outputs="text",
+            title=cfg.get("gradio_title", "Axolotl Gradio Interface"),
+        )
 
     demo.queue().launch(
         show_api=False,
@@ -381,6 +394,8 @@ def load_cfg(config: Union[str, Path] = Path("examples/"), **kwargs):
     )
 
     prepare_optim_env(cfg)
+
+    prepare_opinionated_env(cfg)
 
     normalize_config(cfg)
 

@@ -8,10 +8,11 @@ from typing import Any, Dict, List, Optional
 from axolotl.prompt_tokenizers import PromptTokenizingStrategy
 from axolotl.prompters import IGNORE_TOKEN_ID, Prompter
 from axolotl.utils.chat_templates import chat_templates
+from axolotl.prompt_strategies.message_preprocessor import get_preprocessor
 
 # Configure the logger
-logging.basicConfig(level=logging.DEBUG)
 LOG = logging.getLogger("axolotl")
+LOG.setLevel(logging.INFO)
 
 
 class ChatTemplatePrompter(Prompter):
@@ -181,16 +182,18 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
 
     def __init__(
         self,
-        prompter,
+        prompter: Prompter,
         tokenizer,
-        train_on_inputs,
-        sequence_len,
+        train_on_inputs: bool = False,
+        sequence_len: int = 2048,
+        message_preprocessor: Optional[str] = None,
         roles_to_train=None,
         train_on_eos="last",
     ):
         super().__init__(prompter, tokenizer, train_on_inputs, sequence_len)
         self.roles_to_train = roles_to_train if roles_to_train is not None else []
         self.train_on_eos = train_on_eos
+        self.message_preprocessor = message_preprocessor
 
     @property
     def messages(self):
@@ -201,7 +204,7 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         self._messages = messages
 
     def tokenize_prompt(self, prompt):
-        turns = prompt[self.messages]
+        turns = self.get_conversation_thread(prompt)
         input_ids = self.prompter.build_prompt(turns)
         labels = [IGNORE_TOKEN_ID] * len(input_ids)
 
@@ -219,9 +222,11 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
             should_train = (
                 train_turn
                 if train_turn is not None
-                else bool(train_detail is not None)
-                if train_detail is not None
-                else self.train_on_inputs or role in self.roles_to_train
+                else (
+                    bool(train_detail is not None)
+                    if train_detail is not None
+                    else self.train_on_inputs or role in self.roles_to_train
+                )
             )
 
             LOG.debug(f"Should train: {should_train}")
@@ -333,11 +338,21 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         return start_idx, end_idx
 
     def get_conversation_thread(self, prompt):
+        out = get_preprocessor(self.message_preprocessor, prompt)
+        if out:
+            # concat conversation and completion
+            return out[0] + [out[1]]
         return prompt[self.messages]
 
 
 def load(tokenizer, cfg, ds_cfg: Optional[Dict[str, Any]] = None):
     ds_cfg = ds_cfg or {}
+
+    message_preprocessor = (
+        ds_cfg["message_preprocessor"]
+        if ds_cfg and "message_preprocessor" in ds_cfg
+        else None
+    )
 
     prompter_params = {
         "tokenizer": tokenizer,
@@ -355,8 +370,9 @@ def load(tokenizer, cfg, ds_cfg: Optional[Dict[str, Any]] = None):
     strategy_params = {
         "train_on_inputs": cfg.train_on_inputs,
         "sequence_len": cfg.sequence_len,
-        "roles_to_train": ds_cfg.get("roles_to_train"),
+        "roles_to_train": ds_cfg.get("roles_to_train", ["gpt", "assistant"]),
         "train_on_eos": ds_cfg.get("train_on_eos", "last"),
+        "message_preprocessor": message_preprocessor,
     }
 
     strategy = ChatTemplateStrategy(

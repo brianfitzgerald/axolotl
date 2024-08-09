@@ -18,7 +18,7 @@ from axolotl.utils.config.models.internals import GPUCapabilities
 
 LOG = logging.getLogger("axolotl.utils.config.models.input")
 
-SUPPORTED_METRICS = {"sacrebleu", "comet", "ter", "chrf", "perplexity"}
+SUPPORTED_METRICS = {"sacrebleu", "comet", "ter", "chrf", "tool_use_json", "perplexity"}
 
 
 class DeprecatedParameters(BaseModel):
@@ -125,6 +125,7 @@ class SFTDataset(BaseModel):
     drop_system_message: Optional[bool] = None
 
     trust_remote_code: Optional[bool] = False
+    message_preprocessor: Optional[str] = None
 
 
 class UserDefinedDPOType(BaseModel):
@@ -235,6 +236,12 @@ class LoraConfig(BaseModel):
     peft_use_rslora: Optional[bool] = None
     peft_layer_replication: Optional[List[Tuple[int, int]]] = None
 
+    qlora_sharded_model_loading: Optional[bool] = Field(
+        default=False,
+        metadata={
+            "help": "load qlora model in sharded format for FSDP using answer.ai technique."
+        },
+    )
     lora_on_cpu: Optional[bool] = None
     gptq: Optional[bool] = None
     bnb_config_kwargs: Optional[Dict[str, Any]] = None
@@ -444,6 +451,7 @@ class WandbConfig(BaseModel):
 
     use_wandb: Optional[bool] = None
     wandb_name: Optional[str] = None
+    add_random_suffix_to_run_name: Optional[bool] = None
     wandb_run_id: Optional[str] = None
     wandb_mode: Optional[str] = None
     wandb_project: Optional[str] = None
@@ -462,6 +470,9 @@ class WandbConfig(BaseModel):
             )
 
         return data
+
+class WeaveConfig(BaseModel):
+    weave_log_eval: Optional[bool] = None
 
 
 class GradioConfig(BaseModel):
@@ -483,6 +494,7 @@ class AxolotlInputConfig(
     ReLoRAConfig,
     HyperparametersConfig,
     WandbConfig,
+    WeaveConfig,
     MLFlowConfig,
     LISAConfig,
     GradioConfig,
@@ -507,6 +519,7 @@ class AxolotlInputConfig(
     datasets: Optional[conlist(Union[SFTDataset, DPODataset, KTODataset], min_length=1)] = None  # type: ignore
     test_datasets: Optional[conlist(Union[SFTDataset, DPODataset, KTODataset], min_length=1)] = None  # type: ignore
     shuffle_merged_datasets: Optional[bool] = True
+    shuffle_before_split: Optional[bool] = None
     dataset_prepared_path: Optional[str] = None
     dataset_shard_num: Optional[int] = None
     dataset_shard_idx: Optional[int] = None
@@ -544,6 +557,7 @@ class AxolotlInputConfig(
 
     eval_table_size: Optional[int] = None
     eval_max_new_tokens: Optional[int] = None
+    eval_print_special_tokens: Optional[bool] = None
     do_causal_lm_eval: Optional[bool] = None
     eval_causal_lm_metrics: Optional[List[str]] = None
     do_bench_eval: Optional[bool] = None
@@ -554,6 +568,8 @@ class AxolotlInputConfig(
 
     loss_watchdog_threshold: Optional[float] = None
     loss_watchdog_patience: Optional[int] = None
+
+    save_on_end: Optional[bool] = None
 
     bf16: Optional[Union[Literal["auto"], bool]] = "auto"
     fp16: Optional[bool] = None
@@ -666,6 +682,7 @@ class AxolotlInputConfig(
     default_system_message: Optional[str] = None
 
     fix_untrained_tokens: Optional[bool] = None
+    disable_save_on_terminate: Optional[bool] = None
 
     # INTERNALS - document for now, generally not set externally
     is_preprocess: Optional[bool] = None
@@ -939,6 +956,8 @@ class AxolotlInputConfig(
     @model_validator(mode="before")
     @classmethod
     def check_eval_packing(cls, data):
+        # TODO also should check test_datasets and val_set_size as we can skip
+        # if there are no eval datasets/splits
         if (
             data.get("sample_packing")
             and data.get("eval_table_size")

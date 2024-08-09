@@ -16,6 +16,8 @@ from dataclasses import dataclass, field
 from functools import wraps
 from pathlib import Path
 from typing import Dict, List, Literal, Optional, Type, Union
+import string
+import random
 
 import torch
 import transformers
@@ -1156,18 +1158,20 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
 
     def get_post_trainer_create_callbacks(self, trainer):
         callbacks = []
-        if self.cfg.use_wandb and self.cfg.eval_table_size > 0:
-            LogPredictionCallback = log_prediction_callback_factory(
-                trainer, self.tokenizer, "wandb"
+        if self.cfg.eval_table_size > 0:
+            logger = (
+                "wandb"
+                if self.cfg.use_wandb
+                else "mlflow"
+                if self.cfg.use_mlflow
+                else ""
             )
-            callbacks.append(LogPredictionCallback(self.cfg))
-        if (
-            self.cfg.use_mlflow
-            and is_mlflow_available()
-            and self.cfg.eval_table_size > 0
-        ):
+            if logger == "mlflow" and not is_mlflow_available():
+                raise ValueError(
+                    "MLflow is not installed. Please install mlflow to use this feature."
+                )
             LogPredictionCallback = log_prediction_callback_factory(
-                trainer, self.tokenizer, "mlflow"
+                trainer, self.tokenizer, logger
             )
             callbacks.append(LogPredictionCallback(self.cfg))
 
@@ -1243,7 +1247,9 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         if self.cfg.fsdp:
             training_arguments_kwargs["fsdp"] = self.cfg.fsdp
             if self.cfg.fsdp_config:
-                training_arguments_kwargs["fsdp_config"] = dict(self.cfg.fsdp_config)
+                training_arguments_kwargs["fsdp_config"] = {
+                    k.lstrip("fsdp_"): v for k, v in dict(self.cfg.fsdp_config).items()
+                }
 
         if self.cfg.adapter == "qlora":
             training_arguments_kwargs["qlora"] = True
@@ -1419,9 +1425,12 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             report_to.append("tensorboard")
 
         training_arguments_kwargs["report_to"] = report_to
-        training_arguments_kwargs["run_name"] = (
-            self.cfg.wandb_name if self.cfg.use_wandb else None
-        )
+        run_name = self.cfg.wandb_name if self.cfg.use_wandb else None
+        if self.cfg.add_random_suffix_to_run_name:
+            suffix = "".join(random.choices(string.ascii_letters + string.digits, k=4))
+            run_name = f"{run_name}-{suffix}"
+            self.cfg.wandb_name = run_name
+        training_arguments_kwargs["run_name"] = run_name
         training_arguments_kwargs["optim"] = (
             self.cfg.optimizer if self.cfg.optimizer else "adamw_hf"
         )
