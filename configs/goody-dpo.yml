@@ -39,10 +39,10 @@ lora_alpha: 32
 lora_dropout: 0.05
 lora_target_linear: true
 
-micro_batch_size: 8
-gradient_accumulation_steps: 1
+micro_batch_size: 4
+gradient_accumulation_steps: 2
 num_epochs: 5
-optimizer: paged_adamw_32bit
+optimizer: adamw_8bit
 lr_scheduler: cosine
 learning_rate: 2e-4
 
