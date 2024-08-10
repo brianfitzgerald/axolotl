@@ -1,14 +1,13 @@
-base_model: google/gemma-2-2b-it
+# base_model: google/gemma-2-2b-it
+base_model: ./out/goody/checkpoint-5000/
 trust_remote_code: true
 model_type: AutoModelForCausalLM
 tokenizer_type: AutoTokenizer
 
-wandb_name: gemnma_chat_template
-
 disable_save_on_terminate: true
 add_random_suffix_to_run_name: true
 eval_print_special_tokens: true
-output_dir: ./out/goody-dpo
+output_dir: ./out/goody-dpo-from-sft
 
 chat_template: gemma
 rl: dpo
