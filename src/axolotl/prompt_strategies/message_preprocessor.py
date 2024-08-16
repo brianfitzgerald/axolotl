@@ -9,29 +9,28 @@ ENTITY_EXTRACTION_TUNING_INSTRUCTION = (
 PreprocessOutput = List[Dict[str, str]]
 
 
-def process_entity_extracton(sample: dict) -> Tuple[PreprocessOutput, Dict[str, str]]:
+def markdown_json(json_str: str) -> str:
+    return f"```json\n{json_str}\n```"
+
+
+def process_entity_extraction(sample: dict) -> Tuple[PreprocessOutput, Dict[str, str]]:
 
     # these fields are misnamed in the dataset
     sample_query = sample["json_data"]
     sample_data = sample["json_query"]
-
-    completion_msg = f"```json\n{sample_data}\n```"
+    context = sample["context"]
 
     conversation = [
         {
             "role": "user",
-            "content": sample["context"],
-        },
-        {
-            "role": "user",
-            "content": sample_query,
+            "content": f"<context>{context}</context><query>{markdown_json(sample_query)}</query>",
         },
     ]
     return (
         conversation,
         {
             "role": "assistant",
-            "content": completion_msg,
+            "content": markdown_json(sample_data),
         },
     )
 
@@ -60,14 +59,14 @@ def get_preprocessor(
 ) -> Optional[PreprocessOutput]:
     if not processor_name:
         return None
-    res = None
+    conversation, completion = None, None
     if processor_name == "entity_extraction":
-        res = process_entity_extracton(sample)
+        conversation, completion = process_entity_extraction(sample)
     elif processor_name == "goody":
-        res = process_goody(sample, "response")
+        conversation, completion = process_goody(sample, "response")
     else:
         raise ValueError(f"Unknown processor name: {processor_name}")
-    return res[0] + [res[1]]
+    return conversation + [completion]
 
 
 def get_dpo_preprocessor(
