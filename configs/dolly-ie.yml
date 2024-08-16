@@ -28,8 +28,8 @@ sequence_len: 2048
 sample_packing: false
 pad_to_sequence_len: false
 
-gradient_accumulation_steps: 4
-micro_batch_size: 16
+gradient_accumulation_steps: 8
+micro_batch_size: 4
 num_epochs: 10
 optimizer: adamw_8bit
 adam_beta2: 0.95
