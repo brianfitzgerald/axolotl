@@ -349,7 +349,11 @@ def load_model(
         and cfg.flash_attention
         and cfg.sample_packing
     ):
-        patch_for_multipack(cfg.model_config_type, model_name=cfg.base_model)
+        patch_for_multipack(
+            cfg.model_config_type,
+            model_name=cfg.base_model,
+            is_remote_code=cfg.trust_remote_code,
+        )
 
         if cfg.is_llama_derived_model:
             from axolotl.monkeypatch.llama_attn_hijack_flash import (
@@ -814,11 +818,13 @@ def load_model(
         )
 
         if cfg.model_config_type in MOE_ARCH_BLOCK:
+            moe_blocks = MOE_ARCH_BLOCK[cfg.model_config_type]
+            moe_blocks = [moe_blocks] if isinstance(moe_blocks, str) else moe_blocks
             set_z3_leaf_modules(
                 model,
                 [
                     get_module_class_from_name(model, module_name)
-                    for module_name in MOE_ARCH_BLOCK[cfg.model_config_type]
+                    for module_name in moe_blocks
                 ],
             )
 
@@ -1019,7 +1025,7 @@ def load_lora(model, cfg, inference=False, config_only=False):
 
     if cfg.lora_target_linear:
         linear_names = find_all_linear_names(model)
-        LOG.info(f"found linear modules: {repr(linear_names)}")
+        LOG.info(f"found linear modules: {repr(sorted(linear_names))}")
         lora_target_modules = list(set(lora_target_modules + linear_names))
 
     lora_config_kwargs = {}

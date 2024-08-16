@@ -190,6 +190,7 @@ class ChatTemplate(str, Enum):
     cohere = "cohere"  # pylint: disable=invalid-name
     llama3 = "llama3"  # pylint: disable=invalid-name
     phi_3 = "phi_3"  # pylint: disable=invalid-name
+    deepseek_v2 = "deepseek_v2"  # pylint: disable=invalid-name
 
 
 class LoftQConfig(BaseModel):
@@ -379,7 +380,7 @@ class HyperparametersConfig(BaseModel):
         },
     )
     torchdistx_path: Optional[str] = None
-    lr_scheduler: Optional[SchedulerType] = "cosine"
+    lr_scheduler: Optional[Union[SchedulerType, Literal["one_cycle"]]] = "cosine"
     lr_scheduler_kwargs: Optional[Dict[str, Any]] = None
     lr_quadratic_warmup: Optional[bool] = None
     cosine_min_lr_ratio: Optional[float] = None
@@ -622,6 +623,8 @@ class AxolotlInputConfig(
     flash_attn_fuse_qkv: Optional[bool] = None
     flash_attn_fuse_mlp: Optional[bool] = None
     flash_optimum: Optional[bool] = None
+
+    eager_attention: Optional[bool] = None
 
     unsloth_cross_entropy_loss: Optional[bool] = None
     unsloth_lora_mlp: Optional[bool] = None
