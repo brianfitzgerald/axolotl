@@ -309,9 +309,16 @@ def load_model(
     """
     Load a model for a given configuration and tokenizer.
     """
+
     base_model = cfg.base_model
     model_type = cfg.type_of_model
     model_config = load_model_config(cfg)
+
+    # load any patches from plugins
+    from axolotl.integrations.base import PluginManager
+
+    plugin_manager = PluginManager.get_instance()
+    plugin_manager.pre_model_load(cfg)
 
     # TODO refactor as a kwarg
     load_in_8bit = cfg.load_in_8bit
@@ -545,7 +552,9 @@ def load_model(
             "bnb_4bit_quant_type": "nf4",
             "bnb_4bit_quant_storage": torch.bfloat16,
         }
-        if cfg.model_config_type in ["jamba", "qwen2_moe"] and not cfg.deepspeed:
+        if cfg.model_config_type in ["jamba", "qwen2_moe"] and not (
+            cfg.deepspeed or cfg.fsdp
+        ):
             # for some reason, this causes the loss to be off by an order of magnitude
             # but deepspeed needs this still in bfloat16
             bnb_config["bnb_4bit_quant_storage"] = torch.float32
@@ -581,25 +590,12 @@ def load_model(
 
     # sample packing uses custom FA2 patch
     if cfg.flash_attention:
-        if not cfg.sample_packing:
-            if cfg.s2_attention:
-                pass
-            # most other models support flash attention, we can define exceptions as they come up
-            model_kwargs["attn_implementation"] = "flash_attention_2"
-            model_config._attn_implementation = (  # pylint: disable=protected-access
-                "flash_attention_2"
-            )
-        else:
-            if model_config.model_type in SUPPORTED_MULTIPACK_MODEL_TYPES:
-                model_kwargs["attn_implementation"] = "flash_attention_2"
-                model_config._attn_implementation = (  # pylint: disable=protected-access
-                    "flash_attention_2"
-                )
-            else:
-                model_kwargs["attn_implementation"] = "eager"
-                model_config._attn_implementation = (  # pylint: disable=protected-access
-                    "eager"
-                )
+        if not cfg.sample_packing and cfg.s2_attention:
+            pass
+        model_kwargs["attn_implementation"] = "flash_attention_2"
+        model_config._attn_implementation = (  # pylint: disable=protected-access
+            "flash_attention_2"
+        )
     elif cfg.sdp_attention:
         model_kwargs["attn_implementation"] = "sdpa"
         model_config._attn_implementation = "sdpa"  # pylint: disable=protected-access
@@ -1101,9 +1097,20 @@ def load_lora(model, cfg, inference=False, config_only=False):
 
 def ensure_dtype(model, dtype=torch.bfloat16):
     for name, module in model.named_modules():
+        weight_mismatch = False
+        bias_mismatch = False
         try:
-            if module.weight.dtype != dtype:
-                print(f"Converting module {name}: {module.weight.dtype} -> {dtype}")
-                module.to(dtype)
+            weight_mismatch = module.weight.dtype != dtype
         except AttributeError:
             pass
+        try:
+            bias_mismatch = module.bias.dtype != dtype
+        except AttributeError:
+            pass
+
+        if weight_mismatch:
+            print(f"Converting module {name}.weight: {module.weight.dtype} -> {dtype}")
+        if bias_mismatch:
+            print(f"Converting module {name}.bias: {module.bias.dtype} -> {dtype}")
+        if weight_mismatch or bias_mismatch:
+            module.to(dtype)

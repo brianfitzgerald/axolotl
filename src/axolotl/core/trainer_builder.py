@@ -4,6 +4,7 @@ Builder for the training args and trainer
 """
 
 import abc
+import gc
 import importlib
 import importlib.util
 import logging
@@ -15,13 +16,14 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from functools import wraps
 from pathlib import Path
-from typing import Dict, List, Literal, Optional, Type, Union
+from typing import Any, Dict, List, Literal, Optional, Type, Union
 import string
 import random
 
 import torch
 import transformers
 from datasets import Dataset
+from torch import nn
 from torch.optim.lr_scheduler import OneCycleLR
 from torch.utils.data import BatchSampler, DataLoader, RandomSampler, SequentialSampler
 from transformers import (
@@ -506,9 +508,10 @@ class AxolotlTrainer(SchedulerMixin, Trainer):
                 batch_max_len = self.args.max_seq_length
             else:
                 batch_size = 1
-                batch_max_len = (
-                    self.args.per_device_train_batch_size * self.args.max_seq_length
+                train_batch_size = (
+                    self.state.train_batch_size or self.args.per_device_train_batch_size
                 )
+                batch_max_len = train_batch_size * self.args.max_seq_length
             return MultipackBatchSampler(
                 RandomSampler(self.train_dataset),
                 lengths=get_dataset_lengths(self.train_dataset),
@@ -999,6 +1002,14 @@ class AxolotlDPOTrainer(SchedulerMixin, DPOTrainer):
                 res[key] = res[key][1:]
         return res
 
+    def training_step(
+        self, model: nn.Module, inputs: Dict[str, Union[torch.Tensor, Any]]
+    ) -> torch.Tensor:
+        loss: torch.Tensor = super().training_step(model, inputs)
+        gc.collect()
+        torch.cuda.empty_cache()
+        return loss
+
 
 class AxolotlORPOTrainer(SchedulerMixin, ORPOTrainer):
     """
@@ -1373,6 +1384,10 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             training_arguments_kwargs[
                 "per_device_eval_batch_size"
             ] = self.cfg.eval_batch_size
+        if self.cfg.auto_find_batch_size is not None:
+            training_arguments_kwargs[
+                "auto_find_batch_size"
+            ] = self.cfg.auto_find_batch_size
         training_arguments_kwargs[
             "gradient_accumulation_steps"
         ] = self.cfg.gradient_accumulation_steps
@@ -1458,9 +1473,9 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         )
 
         training_arguments_kwargs["sample_packing"] = bool(self.cfg.sample_packing)
-        training_arguments_kwargs[
-            "multipack_real_batches"
-        ] = not self.cfg.flash_attention
+        training_arguments_kwargs["multipack_real_batches"] = (
+            not self.cfg.flash_attention or self.cfg.multipack_real_batches
+        )
         training_arguments_kwargs["eval_sample_packing"] = bool(
             self.cfg.eval_sample_packing
         )
@@ -1853,6 +1868,8 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
         )
         if self.cfg.fsdp:
             ensure_dtype(dpo_trainer.model, dtype=self.cfg.torch_dtype)
+            if self.cfg.rl in ["dpo", "ipo"] and dpo_trainer.ref_model:
+                ensure_dtype(dpo_trainer.ref_model, dtype=self.cfg.torch_dtype)
 
         dpo_trainer = self.hook_post_create_trainer(dpo_trainer)
         for callback in self.get_post_trainer_create_callbacks(dpo_trainer):

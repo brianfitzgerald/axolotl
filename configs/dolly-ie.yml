@@ -28,15 +28,14 @@ sequence_len: 2048
 sample_packing: false
 pad_to_sequence_len: false
 
-gradient_accumulation_steps: 8
+gradient_accumulation_steps: 4
 micro_batch_size: 4
-num_epochs: 10
 optimizer: adamw_8bit
 adam_beta2: 0.95
 adam_epsilon: 0.00001
 max_grad_norm: 1.0
 lr_scheduler: cosine
-learning_rate: 2e-4
+learning_rate: 1e-6
 
 bf16: auto
 
@@ -52,15 +51,19 @@ gradient_checkpointing_kwargs:
 logging_steps: 1
 flash_attention: true
 
+num_epochs: 50
 eval_steps: 100
 save_steps: 5000
+max_steps: 100000
+
 eval_table_size: 4
 eval_batch_size: 4
 eval_sample_packing: false
 eval_max_new_tokens: 512
 eval_causal_lm_metrics: ["perplexity"]
+do_causal_lm_eval: true
 
-warmup_ratio: 0.2
+warmup_ratio: 0.1
 weight_decay: 0.1
 resize_token_embeddings_to_32x: true
 special_tokens:
