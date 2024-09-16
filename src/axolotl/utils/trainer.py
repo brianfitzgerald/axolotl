@@ -11,7 +11,6 @@ import numpy as np
 import torch
 import torch.cuda
 from accelerate.logging import get_logger
-from datasets import set_caching_enabled
 from torch.utils.data import DataLoader, RandomSampler
 from transformers.utils import is_torch_bf16_gpu_available
 

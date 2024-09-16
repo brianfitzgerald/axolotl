@@ -7,18 +7,29 @@ from pathlib import Path
 import fire
 import transformers
 from dotenv import load_dotenv
+from typing import Optional
 
 from axolotl.cli import (
-    do_inference,
+    do_inference_cli,
     do_inference_gradio,
     load_cfg,
     print_axolotl_text_art,
+    do_inference_api,
+    api_create_model
 )
 from axolotl.common.cli import TrainerCliArgs
+import uvicorn
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+
+class CompletionRequest(BaseModel):
+    prompt: str
+    max_length: Optional[int] = None
+
 
 
 def do_cli(
-    config: Path = Path("examples/"), gradio: bool = False, chat: bool = False, **kwargs
+    config: Path = Path("examples/"), gradio: bool = False, chat: bool = False, api: bool = False, **kwargs
 ):
     # pylint: disable=duplicate-code
     print_axolotl_text_art()
@@ -33,10 +44,25 @@ def do_cli(
     if chat and not gradio:
         raise ValueError("Must use gradio for chat mode")
 
+    app = FastAPI()
+
+    model, tokenizer = None, None
+
+    @app.post("/generate")
+    async def generate_completion(request: CompletionRequest):
+        try:
+            completion = do_inference_api(request.prompt, tokenizer, model, cfg=parsed_cfg, cli_args=parsed_cli_args)
+            return {"completion": completion}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
     if gradio:
         do_inference_gradio(chat=chat, cfg=parsed_cfg, cli_args=parsed_cli_args)
+    elif api:
+        model, tokenizer = api_create_model(cfg=parsed_cfg, cli_args=parsed_cli_args)
+        uvicorn.run(app, host="0.0.0.0", port=8080)
     else:
-        do_inference(cfg=parsed_cfg, cli_args=parsed_cli_args)
+        do_inference_cli(cfg=parsed_cfg, cli_args=parsed_cli_args)
 
 
 if __name__ == "__main__":
