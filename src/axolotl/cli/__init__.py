@@ -178,14 +178,17 @@ def api_create_model(cfg: DictDefault, cli_args: TrainerCliArgs):
     model = model.to(cfg.device, dtype=cfg.torch_dtype)
     model.eval()
 
+    return model, tokenizer
+
 
 def do_inference_api(
-    instruction: str,
+    prompts: List[str],
+    max_tokens: Optional[int],
     tokenizer,
     model,
     cfg: DictDefault,
     cli_args: TrainerCliArgs,
-) -> str:
+) -> List[str]:
     prompter = cli_args.prompter
     default_tokens = {"unk_token": "<unk>", "bos_token": "<s>", "eos_token": "</s>"}
 
@@ -201,17 +204,16 @@ def do_inference_api(
         )
 
     if prompter_module:
-        prompt: str = next(
-            prompter_module().build_prompt(instruction=instruction.strip("\n"))
-        )
-    else:
-        prompt = instruction.strip()
-    batch = tokenizer(prompt, return_tensors="pt", add_special_tokens=True)
+        prompts = [next(
+            prompter_module().build_prompt(instruction=p)
+        ) for p in prompts]
+    batch = tokenizer(prompts, return_tensors="pt", add_special_tokens=True)
 
     with torch.no_grad():
+        max_tokens_val = max_tokens or 1024
         generation_config = GenerationConfig(
             repetition_penalty=1.1,
-            max_new_tokens=1024,
+            max_new_tokens=max_tokens_val,
             temperature=0.9,
             top_p=0.95,
             top_k=40,
@@ -225,14 +227,12 @@ def do_inference_api(
             output_hidden_states=False,
             output_scores=False,
         )
-        streamer = TextStreamer(tokenizer)
         generated = model.generate(
             inputs=batch["input_ids"].to(cfg.device),
             generation_config=generation_config,
-            streamer=streamer,
         )
-    decoded_response = tokenizer.decode(generated["sequences"].cpu().tolist()[0])
-    return decoded_response
+    decoded_responses = tokenizer.batch_decode(generated["sequences"].cpu().tolist())
+    return decoded_responses
 
 def do_inference_cli(
     *,

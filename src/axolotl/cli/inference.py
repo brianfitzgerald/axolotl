@@ -7,7 +7,7 @@ from pathlib import Path
 import fire
 import transformers
 from dotenv import load_dotenv
-from typing import Optional
+from typing import Optional, List
 
 from axolotl.cli import (
     do_inference_cli,
@@ -23,7 +23,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
 class CompletionRequest(BaseModel):
-    prompt: str
+    prompts: List[str]
     max_length: Optional[int] = None
 
 
@@ -51,8 +51,8 @@ def do_cli(
     @app.post("/generate")
     async def generate_completion(request: CompletionRequest):
         try:
-            completion = do_inference_api(request.prompt, tokenizer, model, cfg=parsed_cfg, cli_args=parsed_cli_args)
-            return {"completion": completion}
+            completions = do_inference_api(request.prompts, request.max_length, tokenizer, model, cfg=parsed_cfg, cli_args=parsed_cli_args)
+            return {"completions": completions}
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 
