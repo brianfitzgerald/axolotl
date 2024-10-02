@@ -222,6 +222,21 @@ class GlaiveShareGPTPromptTokenizingStrategy(SimpleShareGPTPromptTokenizingStrat
 
         return system_msg + chat_msgs
 
+class ReflectionShareGPTPromptTokenizingStrategy(SimpleShareGPTPromptTokenizingStrategy):
+    """
+    sharegpt strategy that remaps glaive data to sharegpt format
+    """
+
+    def get_conversation_thread(self, prompt: dict):
+        messages = []
+        for i, m in enumerate(prompt['messages']):
+            for j, part in enumerate(m["content"]):
+                messages.append({
+                    "role": m["role"],
+                    "content": part["content"],
+                    'type': part['type']
+                })
+        return messages
 
 load = build_loader(SimpleShareGPTPromptTokenizingStrategy, ShareGPTPrompterV2)
 load_role = build_loader(SimpleRoleShareGPTPromptTokenizingStrategy, ShareGPTPrompterV2)
@@ -233,4 +248,8 @@ load_glaive = build_loader(
     GlaiveShareGPTPromptTokenizingStrategy,
     ShareGPTPrompterV2,
     default_conversation="chatml_glaive",
+)
+load_reflection = build_loader(
+    ReflectionShareGPTPromptTokenizingStrategy,
+    ShareGPTPrompterV2,
 )

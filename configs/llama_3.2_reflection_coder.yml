@@ -7,9 +7,8 @@ strict: false
 
 datasets:
   - path: SenseLLM/ReflectionSeq-DS
-    type: sharegpt
+    type: sharegpt.load_reflection
     split: train
-    conversation: reflectionseq
 
 val_set_size: 50
 
