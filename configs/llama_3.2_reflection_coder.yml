@@ -1,10 +1,8 @@
 base_model: google/gemma-1.1-2b-it
 model_type: AutoModelForCausalLM
 tokenizer_type: AutoTokenizer
-chat_template: llama3.2
+chat_template: llama3_2
 
-load_in_8bit: false
-load_in_4bit: true
 strict: false
 
 datasets:
