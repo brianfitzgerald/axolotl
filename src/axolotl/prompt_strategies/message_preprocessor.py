@@ -26,6 +26,7 @@ def process_entity_extraction(sample: dict) -> Tuple[PreprocessOutput, Dict[str,
             "content": f"<context>{context}</context><query>{markdown_json(sample_query)}</query>",
         },
     ]
+
     return (
         conversation,
         {

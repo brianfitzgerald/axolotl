@@ -1,0 +1,47 @@
+base_model: google/gemma-1.1-2b-it
+model_type: AutoModelForCausalLM
+tokenizer_type: AutoTokenizer
+chat_template: llama3.2
+
+load_in_8bit: false
+load_in_4bit: true
+strict: false
+
+datasets:
+  - path: SenseLLM/ReflectionSeq-DS
+    type: sharegpt
+    split: train
+    conversation: reflectionseq
+
+val_set_size: 50
+
+dataset_prepared_path: ./prepared-datasets/llama-3.2-reflection-coder
+output_dir: ./out/llama-3.2-reflection-coder
+
+sequence_len: 4096
+sample_packing: true
+pad_to_sequence_len: true
+
+gradient_accumulation_steps: 2
+micro_batch_size: 4
+num_epochs: 3
+optimizer: adamw_bnb_8bit
+lr_scheduler: cosine
+learning_rate: 2e-5
+warmup_ratio: 0.2
+
+train_on_inputs: false
+group_by_length: false
+bf16: auto
+
+gradient_checkpointing: true
+logging_steps: 1
+flash_attention: true
+
+eval_steps: 1000
+eval_table_size: 2
+eval_batch_size: 2
+eval_sample_packing: false
+eval_max_new_tokens: 1024
+
+eval_causal_lm_metrics: ["sacrebleu", "chrf"]
