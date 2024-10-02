@@ -55,6 +55,20 @@ def process_goody(
     )
 
 
+def process_reflection_coder(prompt: dict):
+    messages = []
+    for i, m in enumerate(prompt["messages"]):
+        for j, part in enumerate(m["content"]):
+            # TODO handle execution as a separate step type, that is masked for training
+            if part["type"] == "execution":
+                continue
+            messages.append(
+                {"role": m["role"], "content": part["content"], "type": part["type"]}
+            )
+    # TODO explode the message chain into multiple samples
+    return messages[:-1], messages[-1]
+
+
 def get_preprocessor(
     processor_name: Optional[str], sample: dict
 ) -> Optional[PreprocessOutput]:
@@ -65,6 +79,8 @@ def get_preprocessor(
         conversation, completion = process_entity_extraction(sample)
     elif processor_name == "goody":
         conversation, completion = process_goody(sample, "response")
+    elif processor_name == "reflection_coder":
+        conversation, completion = process_reflection_coder(sample)
     else:
         raise ValueError(f"Unknown processor name: {processor_name}")
     return conversation + [completion]

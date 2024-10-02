@@ -4,6 +4,7 @@ import abc
 import copy
 import logging
 from typing import Dict, List, Tuple, Union
+import traceback
 
 from fastchat.conversation import Conversation
 from transformers import BatchEncoding, PreTrainedTokenizer
@@ -529,6 +530,7 @@ class ShareGPTPromptTokenizingStrategy(PromptTokenizingStrategy):
                 )
             return result
         except (KeyError, AssertionError, IndexError) as err:
+            traceback.print_exc()
             raise InvalidDataException(str(err)) from err
 
 

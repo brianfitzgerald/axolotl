@@ -1,13 +1,22 @@
 base_model: google/gemma-1.1-2b-it
 model_type: AutoModelForCausalLM
 tokenizer_type: AutoTokenizer
-chat_template: llama3_2
 
 strict: false
 
 datasets:
   - path: SenseLLM/ReflectionSeq-DS
-    type: sharegpt.load_reflection
+    type: chat_template
+    chat_template: llama3
+    field_messages: messages
+    message_field_role: role
+    message_field_content: content
+    message_preprocessor: goody
+    roles:
+      user:
+        - user
+      assistant:
+        - assistant
     split: train
 
 val_set_size: 50

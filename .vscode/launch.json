@@ -11,10 +11,9 @@
                 "--dataset_processes=1",
             ],
             "console": "integratedTerminal",
-            "justMyCode": true,
         },
         {
-            "name": "Axolotl - train",
+            "name": "Axolotl - Train",
             "type": "debugpy",
             "request": "launch",
             "program": "src/axolotl/cli/preprocess.py",
@@ -22,7 +21,6 @@
                 "configs/llama_3.2_reflection_coder.yml",
             ],
             "console": "integratedTerminal",
-            "justMyCode": true,
         }
     ]
 }

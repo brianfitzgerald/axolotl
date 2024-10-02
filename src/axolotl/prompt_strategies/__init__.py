@@ -26,7 +26,5 @@ def load(strategy, tokenizer, cfg, ds_cfg):
                 load_kwargs["ds_cfg"] = ds_cfg
         return func(tokenizer, cfg, **load_kwargs)
     except ModuleNotFoundError:
-        return None
-    except Exception as exc:  # pylint: disable=broad-exception-caught
-        LOG.error(f"Failed to load prompt strategy `{strategy}`: {str(exc)}")
+        LOG.error(f"Prompt strategy {strategy} not found.")
         return None
