@@ -1,4 +1,4 @@
-base_model: google/gemma-1.1-2b-it
+base_model: meta-llama/Llama-3.2-1B-Instruct
 model_type: AutoModelForCausalLM
 tokenizer_type: AutoTokenizer
 
@@ -9,14 +9,8 @@ datasets:
     type: chat_template
     chat_template: llama3
     field_messages: messages
-    message_field_role: role
-    message_field_content: content
-    message_preprocessor: goody
-    roles:
-      user:
-        - user
-      assistant:
-        - assistant
+    message_preprocessor: reflection_coder
+    roles_to_train: ['user', 'assistant']
     split: train
 
 val_set_size: 50

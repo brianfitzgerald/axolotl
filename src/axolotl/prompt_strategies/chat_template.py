@@ -230,12 +230,8 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
             }
 
             return tokenized_prompt
-        LOG.info(self.roles_to_train)
-        LOG.info(self.train_on_eos)
-        LOG.info(self.prompter.message_field_training)
-        LOG.info(self.prompter.message_field_training_detail)
 
-        turns = prompt[self.messages]
+        turns = self.get_conversation_thread(prompt)
         input_ids = self.prompter.build_prompt(turns)
         labels = [IGNORE_TOKEN_ID] * len(input_ids)
 
@@ -403,8 +399,8 @@ def load(tokenizer, cfg, ds_cfg: Optional[Dict[str, Any]] = None):
     strategy_params = {
         "train_on_inputs": cfg.train_on_inputs,
         "sequence_len": cfg.sequence_len,
-        "roles_to_train": ds_cfg.get("roles_to_train", ["gpt", "assistant"]),
-        "train_on_eos": ds_cfg.get("train_on_eos", "last"),
+        "roles_to_train": ds_cfg.get("roles_to_train", []),
+        "train_on_eos": ds_cfg.get("train_on_eos", None),
         "message_preprocessor": message_preprocessor,
     }
 
