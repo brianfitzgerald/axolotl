@@ -60,7 +60,6 @@ def process_reflection_coder(prompt: dict):
     for i, m in enumerate(prompt["messages"]):
         for j, part in enumerate(m["content"]):
             # TODO handle execution as a separate step type, that is masked for training
-            role = m["role"]
             if part["type"] == "execution":
                 continue
             messages.append(
