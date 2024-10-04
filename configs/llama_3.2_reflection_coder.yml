@@ -22,7 +22,8 @@ sequence_len: 4096
 sample_packing: true
 pad_to_sequence_len: true
 
-micro_batch_size: 16
+gradient_accumulation_steps: 2
+micro_batch_size: 8
 num_epochs: 3
 optimizer: adamw_bnb_8bit
 lr_scheduler: cosine
