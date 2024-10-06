@@ -305,7 +305,7 @@ def process_pretraining_datasets_for_packing(
 
 
 def calculate_total_num_steps(cfg, train_dataset, update=True):
-    if not cfg.total_num_tokens:
+    if not cfg.total_num_tokens and not cfg.skip_prepare_dataset:
         total_num_tokens = np.sum(
             train_dataset.data.column("input_ids")
             .to_pandas()
@@ -318,7 +318,11 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
 
     skip_estimates = cfg.model_config_type == "mamba"
 
-    if not skip_estimates and not cfg.total_supervised_tokens:
+    if (
+        not skip_estimates
+        and not cfg.total_supervised_tokens
+        and not cfg.skip_prepare_dataset
+    ):
         total_supervised_tokens = (
             train_dataset.data.column("labels")
             .to_pandas()
@@ -477,13 +481,15 @@ def prepare_opinionated_env(cfg):
         os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 
-def setup_trainer(cfg, train_dataset, eval_dataset, model, tokenizer, total_num_steps):
+def setup_trainer(
+    cfg, train_dataset, eval_dataset, model, tokenizer, processor, total_num_steps
+):
     if cfg.rl in ["dpo", "ipo", "orpo", "kto", "simpo"]:
-        trainer_builder = HFRLTrainerBuilder(cfg, model[0], tokenizer)
+        trainer_builder = HFRLTrainerBuilder(cfg, model[0], tokenizer, processor)
         trainer_builder.model_ref = model[1]
         trainer_builder.peft_config = model[2]
     else:
-        trainer_builder = HFCausalTrainerBuilder(cfg, model[0], tokenizer)
+        trainer_builder = HFCausalTrainerBuilder(cfg, model[0], tokenizer, processor)
 
     trainer_builder.train_dataset = train_dataset
     trainer_builder.eval_dataset = eval_dataset
