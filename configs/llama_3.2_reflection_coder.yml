@@ -1,6 +1,7 @@
 base_model: meta-llama/Llama-3.2-1B-Instruct
 model_type: AutoModelForCausalLM
 tokenizer_type: AutoTokenizer
+add_random_suffix_to_run_name: true
 
 strict: false
 
@@ -22,12 +23,12 @@ sequence_len: 4096
 sample_packing: true
 pad_to_sequence_len: true
 
-gradient_accumulation_steps: 2
+gradient_accumulation_steps: 4
 micro_batch_size: 8
 num_epochs: 3
 optimizer: adamw_bnb_8bit
 lr_scheduler: cosine
-learning_rate: 2e-5
+learning_rate: 1e-5
 warmup_ratio: 0.2
 
 train_on_inputs: false
@@ -38,11 +39,15 @@ gradient_checkpointing: true
 logging_steps: 1
 flash_attention: true
 
+do_causal_lm_eval: true
 eval_steps: 1000
 eval_table_size: 2
 eval_batch_size: 2
 eval_sample_packing: false
 eval_max_new_tokens: 1024
+
+do_bench_eval: true
+bench_dataset: humaneval
 
 special_tokens:
   pad_token: <|end_of_text|>

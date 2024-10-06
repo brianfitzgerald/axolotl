@@ -221,8 +221,9 @@ def bench_eval_callback_factory(trainer, tokenizer):
         )
         # bench_dataset = bench_dataset.remove_columns('subject')
     elif trainer.args.bench_dataset == "humaneval":
+        LOG.info("Loading humaneval dataset")
         bench_dataset = load_dataset("openai/openai_humaneval")
-        bench_dataset["eval"] = bench_dataset["validation"]
+        bench_dataset["eval"] = bench_dataset["test"]
     elif "/" in trainer.args.bench_dataset:
         bench_ds = trainer.args.bench_dataset
         bench_ds_name = "/".join(bench_ds.split("/", 2)[:2])
