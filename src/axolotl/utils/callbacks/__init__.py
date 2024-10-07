@@ -11,6 +11,7 @@ from shutil import copyfile
 from tempfile import NamedTemporaryFile
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 import asyncio
+from functools import partial
 
 import evaluate
 import numpy as np
@@ -38,6 +39,7 @@ from weave import Evaluation as WeaveBaseEvaluation, Model as WeaveBaseModel
 
 from axolotl.utils import is_mlflow_available, StopOnTokens
 from axolotl.utils.bench import log_gpu_memory_usage
+from axolotl.utils.callbacks.code_eval import CodeExecutionEval
 from axolotl.utils.callbacks.perplexity import Perplexity
 from axolotl.utils.callbacks.tool_eval import FunctionCallAccuracy
 from axolotl.utils.config.models.input.v0_4_1 import AxolotlInputConfig
@@ -243,9 +245,19 @@ def bench_eval_callback_factory(trainer, tokenizer):
     if trainer.args.max_bench_samples is not None:
         bench_dataset = bench_dataset.select(range(trainer.args.max_bench_samples))
 
-    def tokenize_evals(example):
-        source = f"{tokenizer.bos_token}{example['input']}"
-        target = f"{example['output']}{tokenizer.eos_token}"
+    def tokenize_evals(bench_dataset: str, example):
+        if bench_dataset == "humaneval":
+            prompt, solution, entrypoint = (
+                example["prompt"],
+                example["canonical_solution"],
+                example["entry_point"],
+            )
+            # TODO BF apply chat template here
+            source = f"{tokenizer.bos_token}{prompt}"
+            target = f"{solution}{tokenizer.eos_token}"
+        else:
+            source = f"{tokenizer.bos_token}{example['input']}"
+            target = f"{example['output']}{tokenizer.eos_token}"
 
         tokenized_source = tokenizer(
             source,
@@ -264,14 +276,19 @@ def bench_eval_callback_factory(trainer, tokenizer):
             "input_ids"
         ]
 
-        return {
+        out = {
             "input_ids": input_ids,
             "labels": labels,
-            "subject": example["subject"],
         }
 
+        if bench_dataset == "mmlu":
+            out["subject"] = example["subject"]
+
+        return out
+
     with zero_first(is_main_process()):
-        bench_dataset = bench_dataset.map(tokenize_evals)
+        tokenize_fn = partial(tokenize_evals, trainer.args.bench_dataset)
+        bench_dataset = bench_dataset.map(tokenize_fn)
         bench_dataset = bench_dataset.filter(lambda x: x["labels"][-2] in abcd_idx)
 
     class BenchEvalCallback(TrainerCallback):
@@ -287,9 +304,13 @@ def bench_eval_callback_factory(trainer, tokenizer):
             metrics: Dict[str, float],  # pylint: disable=unused-argument
             **kwargs,  # pylint: disable=unused-argument
         ):
-            data_loader = trainer.get_bench_dataloader(
-                bench_dataset.remove_columns(["input", "subject", "output", "name"])
-            )
+
+            dl_dataset = bench_dataset
+            if args.bench_dataset == "mmlu":
+                dl_dataset = dl_dataset.remove_columns(
+                    ["input", "subject", "output", "name"]
+                )
+            data_loader = trainer.get_bench_dataloader(dl_dataset)
             trainer.model.eval()
             preds, refs = [], []
             loss_bench = 0
@@ -312,6 +333,11 @@ def bench_eval_callback_factory(trainer, tokenizer):
                     for label in labels.tolist()
                 ]
                 loss_bench += loss.item()
+            if args.bench_dataset == "humaneval":
+                results = {}
+                # TODO actually call eval
+                metrics[f"{bench_split}_bench_pass_rate_{args.bench_dataset}"] = 0
+                return
             # Extract results by subject.
             bench_name = bench_dataset["name"]
             bench_names: dict = {s: {"refs": [], "preds": []} for s in set(bench_name)}
