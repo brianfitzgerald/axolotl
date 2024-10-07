@@ -4,6 +4,7 @@ import abc
 import copy
 import logging
 from typing import Dict, List, Tuple, Union
+import traceback
 
 from fastchat.conversation import Conversation
 from transformers import BatchEncoding, PreTrainedTokenizer
@@ -158,6 +159,63 @@ class AlpacaPromptTokenizingStrategy(InstructionPromptTokenizingStrategy):
         )
 
 
+class ExtractiveQATokenizingStrategy(InstructionPromptTokenizingStrategy):
+    """
+    Tokenizing strategy for Extractive QA prompts.
+    """
+
+    def parse_instruction_fields(self, prompt) -> Tuple[str, str, str]:
+        expected_schema = ", ".join(prompt["fields"])
+        expected_schema = "[" + expected_schema + "]"
+        output = str(prompt["json_schema"])
+        context = prompt["context"]
+
+        return (
+            expected_schema,
+            context,
+            output,
+        )
+
+
+class SquadTokenizingStrategy(InstructionPromptTokenizingStrategy):
+    """
+    Convert the sample to a tuple of instruction, input, and response
+    """
+
+    def tokenize_prompt(self, prompt):
+        context = prompt["context"]
+        question = prompt["question"]
+        answers = prompt["answers"]["text"]
+        if len(answers) == 0:
+            answer = "I'm sorry, I don't know the answer to that question."
+        else:
+            answer = answers[0]
+
+        user_prompt = next(
+            iter(
+                self.prompter.build_prompt(
+                    context,
+                    question,
+                )
+            )
+        )
+
+        tokenized_prompt = self._tokenize(user_prompt, strip_bos_token=True, add_eos_token=False)
+        if not self.train_on_inputs:
+            user_prompt_len = len(tokenized_prompt["input_ids"])
+            # TODO this could be sped up using numpy array slicing
+            tokenized_prompt["labels"] = [IGNORE_INDEX] * user_prompt_len
+        tokenized_res_prompt = self._tokenize(
+            answer, strip_bos_token=True, add_eos_token=True
+        )
+        tokenized_prompt["input_ids"] += tokenized_res_prompt["input_ids"]
+        tokenized_prompt["attention_mask"] += tokenized_res_prompt["attention_mask"]
+        tokenized_prompt["labels"] += tokenized_res_prompt["input_ids"]
+
+        return tokenized_prompt
+
+
+
 class AlpacaMultipleChoicePromptTokenizingStrategy(InstructionPromptTokenizingStrategy):
     """
     Tokenizing strategy for Alpaca Multiple Choice prompts.
@@ -190,10 +248,12 @@ class OpenAssistantPromptTokenizingStrategy(InstructionPromptTokenizingStrategy)
     """
 
     def parse_instruction_fields(self, prompt) -> Tuple[str, str, str]:
+        instruction = prompt["instruction"] or prompt["INSTRUCTION"]
+        response = prompt["response"] or prompt["RESPONSE"]
         return (
-            prompt["INSTRUCTION"],
+            instruction,
             "",
-            prompt["RESPONSE"],
+            response,
         )
 
 
@@ -470,6 +530,7 @@ class ShareGPTPromptTokenizingStrategy(PromptTokenizingStrategy):
                 )
             return result
         except (KeyError, AssertionError, IndexError) as err:
+            traceback.print_exc()
             raise InvalidDataException(str(err)) from err
 
 

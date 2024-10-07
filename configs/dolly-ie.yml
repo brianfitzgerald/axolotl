@@ -1,0 +1,70 @@
+base_model: google/gemma-2-2b-it
+trust_remote_code: true
+model_type: AutoModelForCausalLM
+tokenizer_type: AutoTokenizer
+chat_template: gemma
+wandb_name: gemma-test
+disable_save_on_terminate: true
+
+load_in_8bit: false
+load_in_4bit: false
+strict: false
+
+datasets:
+  - path: roborovski/dolly-entity-extraction
+    type: chat_template
+    chat_template: gemma
+    message_preprocessor: entity_extraction
+    message_field_role: role
+    message_field_content: content
+    roles_to_train: ["assistant"]
+
+dataset_prepared_path: ./prepared-datasets/dolly_entity_extraction
+val_set_size: 16
+output_dir: ./out
+shuffle_before_split: true
+
+sequence_len: 2048
+sample_packing: false
+pad_to_sequence_len: false
+
+gradient_accumulation_steps: 4
+micro_batch_size: 4
+optimizer: adamw_8bit
+adam_beta2: 0.95
+adam_epsilon: 0.00001
+max_grad_norm: 1.0
+lr_scheduler: cosine
+learning_rate: 1e-6
+
+bf16: auto
+
+train_on_inputs: false
+group_by_length: false
+save_on_end: false
+
+seed: 1010101
+
+gradient_checkpointing: true
+gradient_checkpointing_kwargs:
+  use_reentrant: True
+logging_steps: 1
+flash_attention: true
+
+num_epochs: 50
+eval_steps: 100
+save_steps: 5000
+max_steps: 100000
+
+eval_table_size: 4
+eval_batch_size: 4
+eval_sample_packing: false
+eval_max_new_tokens: 512
+eval_causal_lm_metrics: ["perplexity"]
+do_causal_lm_eval: true
+
+warmup_ratio: 0.1
+weight_decay: 0.1
+resize_token_embeddings_to_32x: true
+special_tokens:
+  additional_special_tokens: ["<context>", "</context>", "<query>", "</query>"]

@@ -37,6 +37,21 @@ def register_chatml_template(system_message=None):
             sep="<|im_end|>",
         )
     )
+    register_conv_template(
+        Conversation(
+            name="gemma_glaive",
+            system_template="<start_of_turn>system\n{system_message}",
+            system_message=system_message,
+            roles=(
+                "<start_of_turn>user\n",
+                "<start_of_turn>assistant\n",
+                "<start_of_turn>tool\n",
+            ),
+            sep_style=SeparatorStyle.NO_COLON_SINGLE,
+            sep="<end_of_turn>\n",
+            stop_str="<end_of_turn>",
+        )
+    )
 
 
 def register_llama3_template(system_message=None):
@@ -200,12 +215,12 @@ class GlaiveShareGPTPromptTokenizingStrategy(SimpleShareGPTPromptTokenizingStrat
     sharegpt strategy that remaps glaive data to sharegpt format
     """
 
-    def get_conversation_thread(self, prompt):
-        conversation = chatml_to_conversation(prompt)
-        conversation = merge_consecutive_messages(conversation)
+    def get_conversation_thread(self, prompt: dict):
+        system_msg = chatml_to_conversation(prompt["system"], "system")
+        chat_msgs = chatml_to_conversation(prompt["chat"], "user")
+        chat_msgs = merge_consecutive_messages(chat_msgs)
 
-        return conversation
-
+        return system_msg + chat_msgs
 
 load = build_loader(SimpleShareGPTPromptTokenizingStrategy, ShareGPTPrompterV2)
 load_role = build_loader(SimpleRoleShareGPTPromptTokenizingStrategy, ShareGPTPrompterV2)

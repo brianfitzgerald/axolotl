@@ -5,9 +5,12 @@ HF Chat Templates prompt strategy
 import logging
 from typing import Any, Dict, List, Optional
 
+from transformers import ProcessorMixin
+
 from axolotl.prompt_tokenizers import PromptTokenizingStrategy
 from axolotl.prompters import IGNORE_TOKEN_ID, Prompter
 from axolotl.utils.chat_templates import chat_templates
+from axolotl.prompt_strategies.message_preprocessor import get_preprocessor
 
 # Configure the logger
 LOG = logging.getLogger("axolotl")
@@ -20,6 +23,7 @@ class ChatTemplatePrompter(Prompter):
     def __init__(
         self,
         tokenizer,
+        processor=None,
         chat_template=None,
         max_length=2048,
         message_field_role: str = "from",
@@ -44,11 +48,12 @@ class ChatTemplatePrompter(Prompter):
         self.message_field_training = message_field_training
         self.message_field_training_detail = message_field_training_detail
         self.tokenizer = tokenizer
+        self.processor: ProcessorMixin = processor
         self.chat_template = chat_template
         self.max_length = max_length
         self.drop_system_message = drop_system_message
 
-    def build_prompt(self, conversation, add_generation_prompt=False):
+    def build_prompt(self, conversation, add_generation_prompt=False, images=None):
         turns = [
             {
                 "role": self.roles[t[self.message_field_role]],
@@ -60,6 +65,28 @@ class ChatTemplatePrompter(Prompter):
 
         if self.drop_system_message and turns[0]["role"] == "system":
             turns = turns[1:]
+
+        if self.processor:
+            text = self.processor.apply_chat_template(
+                turns,
+                chat_template=self.chat_template,
+                tokenize=False,
+                add_generation_prompt=add_generation_prompt,
+            )
+            batch = self.processor(
+                text=text,
+                images=images,
+                return_tensors="pt",
+                truncation=True,
+                max_length=self.max_length,
+            )
+            # workaround since processor works in batches instead of single examples
+            for k, val in batch.items():
+                if k in ["pixel_values"]:
+                    batch[k] = val.tolist()
+                else:
+                    batch[k] = val.squeeze().tolist()
+            return batch
 
         return self.tokenizer.apply_chat_template(
             turns,
@@ -181,16 +208,19 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
 
     def __init__(
         self,
-        prompter,
+        prompter: Prompter,
         tokenizer,
-        train_on_inputs,
-        sequence_len,
+        train_on_inputs: bool = False,
+        sequence_len: int = 2048,
+        message_preprocessor: Optional[str] = None,
         roles_to_train=None,
         train_on_eos=None,
     ):
         super().__init__(prompter, tokenizer, train_on_inputs, sequence_len)
         self.roles_to_train = roles_to_train if roles_to_train is not None else []
         self.train_on_eos = train_on_eos
+        self.message_preprocessor = message_preprocessor
+        self.images = "images"
 
     @property
     def messages(self):
@@ -209,10 +239,21 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
             and not self.prompter.message_field_training_detail
         ):
             turns = self.get_conversation_thread(prompt)
+            images = self.get_images(prompt)
             prompt_ids = self.prompter.build_prompt(
-                turns[:-1], add_generation_prompt=True
+                turns[:-1],
+                add_generation_prompt=True,
+                images=images,
             )
-            input_ids = self.prompter.build_prompt(turns)
+            tokenized_res = self.prompter.build_prompt(turns, images=images)
+            tokenized_prompt = {}
+            if isinstance(tokenized_res, list):
+                input_ids = prompt_ids + tokenized_res[len(prompt_ids) :]
+                tokenized_prompt["input_ids"] = input_ids
+                tokenized_prompt["attention_mask"] = [1] * len(input_ids)
+            else:
+                input_ids = tokenized_res["input_ids"]
+                tokenized_prompt = tokenized_res
 
             if not self.train_on_inputs:
                 user_prompt_len = len(prompt_ids)
@@ -220,19 +261,11 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
             else:
                 labels = input_ids
 
-            tokenized_prompt = {
-                "input_ids": input_ids,
-                "labels": labels,
-                "attention_mask": [1] * len(input_ids),
-            }
+            tokenized_prompt["labels"] = labels
 
             return tokenized_prompt
-        LOG.info(self.roles_to_train)
-        LOG.info(self.train_on_eos)
-        LOG.info(self.prompter.message_field_training)
-        LOG.info(self.prompter.message_field_training_detail)
 
-        turns = prompt[self.messages]
+        turns = self.get_conversation_thread(prompt)
         input_ids = self.prompter.build_prompt(turns)
         labels = [IGNORE_TOKEN_ID] * len(input_ids)
 
@@ -366,11 +399,23 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         return start_idx, end_idx
 
     def get_conversation_thread(self, prompt):
+        preprocessed = get_preprocessor(self.message_preprocessor, prompt)
+        if preprocessed:
+            return preprocessed
         return prompt[self.messages]
 
+    def get_images(self, prompt):
+        return prompt.get(self.images, None)
 
-def load(tokenizer, cfg, ds_cfg: Optional[Dict[str, Any]] = None):
+
+def load(tokenizer, cfg, ds_cfg: Optional[Dict[str, Any]] = None, processor=None):
     ds_cfg = ds_cfg or {}
+
+    message_preprocessor = (
+        ds_cfg["message_preprocessor"]
+        if ds_cfg and "message_preprocessor" in ds_cfg
+        else None
+    )
 
     prompter_params = {
         "tokenizer": tokenizer,
@@ -386,6 +431,7 @@ def load(tokenizer, cfg, ds_cfg: Optional[Dict[str, Any]] = None):
         "drop_system_message": ds_cfg.get("drop_system_message", False),
         # we need to add one for detecting sequences with exceeding the `sequence_len` limit.
         "max_length": cfg.sequence_len + 1,
+        "processor": processor,
     }
 
     strategy_params = {
@@ -393,6 +439,7 @@ def load(tokenizer, cfg, ds_cfg: Optional[Dict[str, Any]] = None):
         "sequence_len": cfg.sequence_len,
         "roles_to_train": ds_cfg.get("roles_to_train", []),
         "train_on_eos": ds_cfg.get("train_on_eos", None),
+        "message_preprocessor": message_preprocessor,
     }
 
     strategy = ChatTemplateStrategy(

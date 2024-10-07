@@ -6,6 +6,8 @@ from typing import Generator, Optional, Union
 
 from colorama import Fore
 from fastchat.conversation import Conversation, get_conv_template
+from transformers.tokenization_utils import PreTrainedTokenizer
+from unidecode import unidecode
 
 LOG = logging.getLogger("axolotl")
 IGNORE_TOKEN_ID = -100
@@ -102,6 +104,59 @@ class AlpacaPrompter(Prompter):
         return REPR_TEMPLATE.format(
             full_prompt=self._build_result("{instruction}", "{input}", "{output}")
         )
+
+
+class ExtractiveQAPrompter(AlpacaPrompter):
+    def match_prompt_style(self):
+        self.system_prompt = "Below is a schema for information to extract from a document. Write a response that extracts the information from the document, following the provided schema."
+        # pylint: disable=duplicate-code
+        if self.prompt_style == PromptStyle.PHI.value:
+            self.turn_format = (
+                "<|user|>\n{schema}<context>{context}<|end|><|assistant|>"
+            )
+            self.system_format = "<|system|>{system}\n"
+        else:
+            raise NotImplementedError(
+                f"Prompt style {self.prompt_style} is not supported for Extractive QA."
+            )
+
+    def _build_result(self, schema, context, output):
+        res = self.system_format.format(
+            system=self.system_prompt
+        ) + self.turn_format.format(schema=schema, context=context, output=output)
+
+        if output:
+            res = f"{res}{output}"
+
+        return res
+
+
+SQUAD_SYSTEM_PROMPT = "Below is a passage of text paired with a question. Write a response that answers the question using information from the passage."
+
+
+class SquadPrompter(AlpacaPrompter):
+    def __init__(self, tokenizer: PreTrainedTokenizer):
+        self.tokenizer = tokenizer
+
+    def _build_result(self, context, question, answer=None) -> str:
+        """
+        Returns the user's input, that the model will complete.
+        If output is provided, it is appended to the end of the prompt.
+        """
+        context = unidecode(context)
+        question = unidecode(question)
+        if answer:
+            answer = unidecode(answer)
+        conversation = [
+            {"role": "system", "content": SQUAD_SYSTEM_PROMPT},
+            {"role": "user", "content": f"Question: {question}\nContext: {context}"},
+        ]
+
+        if answer:
+            conversation.append({"role": "assistant", "content": answer})
+
+        conversation_out: str = self.tokenizer.apply_chat_template(conversation, tokenize=False)  # type: ignore
+        return conversation_out
 
 
 class UnpromptedPrompter(AlpacaPrompter):

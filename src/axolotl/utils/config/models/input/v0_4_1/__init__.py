@@ -18,7 +18,7 @@ from axolotl.utils.config.models.internals import GPUCapabilities
 
 LOG = logging.getLogger("axolotl.utils.config.models.input")
 
-SUPPORTED_METRICS = {"sacrebleu", "comet", "ter", "chrf", "perplexity"}
+SUPPORTED_METRICS = {"sacrebleu", "comet", "ter", "chrf", "tool_use_json", "perplexity"}
 
 
 class DeprecatedParameters(BaseModel):
@@ -125,6 +125,7 @@ class SFTDataset(BaseModel):
     drop_system_message: Optional[bool] = None
 
     trust_remote_code: Optional[bool] = False
+    message_preprocessor: Optional[str] = None
 
 
 class UserDefinedDPOType(BaseModel):
@@ -188,6 +189,8 @@ class ChatTemplate(str, Enum):
     gemma = "gemma"  # pylint: disable=invalid-name
     cohere = "cohere"  # pylint: disable=invalid-name
     llama3 = "llama3"  # pylint: disable=invalid-name
+    llama3_2 = "llama3_2"  # pylint: disable=invalid-name
+    llama3_2_vision = "llama3_2_vision"  # pylint: disable=invalid-name
     phi_3 = "phi_3"  # pylint: disable=invalid-name
     phi_35 = "phi_35"  # pylint: disable=invalid-name
     deepseek_v2 = "deepseek_v2"  # pylint: disable=invalid-name
@@ -228,11 +231,12 @@ class LoraConfig(BaseModel):
     lora_r: Optional[int] = None
     lora_alpha: Optional[int] = None
     lora_fan_in_fan_out: Optional[bool] = None
-    lora_target_modules: Optional[List[str]] = None
+    lora_target_modules: Optional[Union[str, List[str]]] = None
     lora_target_linear: Optional[bool] = None
     lora_modules_to_save: Optional[List[str]] = None
     lora_dropout: Optional[float] = 0.0
     peft_layers_to_transform: Optional[List[int]] = None
+    peft_layers_pattern: Optional[List[str]] = None
     peft: Optional[PeftConfig] = None
     peft_use_dora: Optional[bool] = None
     peft_use_rslora: Optional[bool] = None
@@ -327,6 +331,9 @@ class ModelInputConfig(BaseModel):
     tokenizer_legacy: Optional[bool] = None
     tokenizer_type: Optional[str] = Field(
         default=None, metadata={"help": "transformers tokenizer class"}
+    )
+    processor_type: Optional[str] = Field(
+        default=None, metadata={"help": "transformers processor class"}
     )
     trust_remote_code: Optional[bool] = None
 
@@ -464,6 +471,7 @@ class WandbConfig(BaseModel):
 
     use_wandb: Optional[bool] = None
     wandb_name: Optional[str] = None
+    add_random_suffix_to_run_name: Optional[bool] = None
     wandb_run_id: Optional[str] = None
     wandb_mode: Optional[str] = None
     wandb_project: Optional[str] = None
@@ -482,6 +490,9 @@ class WandbConfig(BaseModel):
             )
 
         return data
+
+class WeaveConfig(BaseModel):
+    weave_log_eval: Optional[bool] = None
 
 
 class GradioConfig(BaseModel):
@@ -503,6 +514,7 @@ class AxolotlInputConfig(
     ReLoRAConfig,
     HyperparametersConfig,
     WandbConfig,
+    WeaveConfig,
     MLFlowConfig,
     LISAConfig,
     GradioConfig,
@@ -527,9 +539,11 @@ class AxolotlInputConfig(
     datasets: Optional[conlist(Union[SFTDataset, DPODataset, KTODataset], min_length=1)] = None  # type: ignore
     test_datasets: Optional[conlist(Union[SFTDataset, DPODataset, KTODataset], min_length=1)] = None  # type: ignore
     shuffle_merged_datasets: Optional[bool] = True
+    shuffle_before_split: Optional[bool] = None
     dataset_prepared_path: Optional[str] = None
     dataset_shard_num: Optional[int] = None
     dataset_shard_idx: Optional[int] = None
+    skip_prepare_dataset: Optional[bool] = False
 
     pretraining_dataset: Optional[  # type: ignore
         conlist(Union[PretrainingDataset, SFTDataset], min_length=1)
@@ -564,6 +578,7 @@ class AxolotlInputConfig(
 
     eval_table_size: Optional[int] = None
     eval_max_new_tokens: Optional[int] = None
+    eval_print_special_tokens: Optional[bool] = None
     do_causal_lm_eval: Optional[bool] = None
     eval_causal_lm_metrics: Optional[List[str]] = None
     do_bench_eval: Optional[bool] = None
@@ -574,6 +589,8 @@ class AxolotlInputConfig(
 
     loss_watchdog_threshold: Optional[float] = None
     loss_watchdog_patience: Optional[int] = None
+
+    save_on_end: Optional[bool] = None
 
     bf16: Optional[Union[Literal["auto"], bool]] = "auto"
     fp16: Optional[bool] = None
@@ -692,6 +709,7 @@ class AxolotlInputConfig(
     default_system_message: Optional[str] = None
 
     fix_untrained_tokens: Optional[bool] = None
+    disable_save_on_terminate: Optional[bool] = None
 
     # INTERNALS - document for now, generally not set externally
     is_preprocess: Optional[bool] = None
@@ -999,6 +1017,18 @@ class AxolotlInputConfig(
 
     @model_validator(mode="before")
     @classmethod
+    def check_mm_prepare(cls, data):
+        if data.get("skip_prepare_dataset"):
+            if data.get("remove_unused_columns") is None:
+                LOG.info(
+                    "setting `remove_unused_columns: false` for skip_prepare_dataset"
+                )
+                data["remove_unused_columns"] = False
+
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
     def check_warmup(cls, data):
         if data.get("warmup_steps") and data.get("warmup_ratio"):
             raise ValueError("warmup_steps and warmup_ratio are mutually exclusive")
@@ -1050,6 +1080,15 @@ class AxolotlInputConfig(
                 "`unfrozen_parameters` used with `peft_layers_to_transform` can have unexpected behavior."
             )
 
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_peft_layers_pattern(cls, data):
+        if data.get("peft_layers_pattern") and not data.get("peft_layers_to_transform"):
+            raise ValueError(
+                "peft_layers_pattern requires peft_layers_to_transform to be set"
+            )
         return data
 
     @model_validator(mode="after")

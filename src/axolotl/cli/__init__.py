@@ -22,7 +22,12 @@ from accelerate.commands.config import config_args
 from art import text2art
 from huggingface_hub import HfApi
 from huggingface_hub.utils import LocalTokenNotFoundError
-from transformers import GenerationConfig, TextIteratorStreamer, TextStreamer
+from transformers import (
+    GenerationConfig,
+    TextIteratorStreamer,
+    TextStreamer,
+    StoppingCriteriaList,
+)
 from transformers.utils import is_torch_bf16_gpu_available
 from transformers.utils.import_utils import _is_package_available
 
@@ -40,10 +45,11 @@ from axolotl.utils.data import load_prepare_dpo_datasets, prepare_dataset
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import is_main_process
 from axolotl.utils.mlflow_ import setup_mlflow_env_vars
-from axolotl.utils.models import load_tokenizer
+from axolotl.utils.models import load_processor, load_tokenizer
 from axolotl.utils.tokenization import check_dataset_labels
 from axolotl.utils.trainer import prepare_opinionated_env, prepare_optim_env
 from axolotl.utils.wandb_ import setup_wandb_env_vars
+from axolotl.utils import StopOnTokens
 
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 src_dir = os.path.join(project_root, "src")
@@ -161,7 +167,75 @@ def do_merge_lora(
         tokenizer.save_pretrained(str(Path(cfg.output_dir) / "merged"))
 
 
-def do_inference(
+def api_create_model(cfg: DictDefault, cli_args: TrainerCliArgs):
+    model, tokenizer = load_model_and_tokenizer(cfg=cfg, cli_args=cli_args)
+    prompter = cli_args.prompter
+    default_tokens = {"unk_token": "<unk>", "bos_token": "<s>", "eos_token": "</s>"}
+
+    for token, symbol in default_tokens.items():
+        # If the token isn't already specified in the config, add it
+        if not (cfg.special_tokens and token in cfg.special_tokens):
+            tokenizer.add_special_tokens({token: symbol})
+    model = model.to(cfg.device, dtype=cfg.torch_dtype)
+    model.eval()
+
+    return model, tokenizer
+
+
+def do_inference_api(
+    prompts: List[str],
+    max_tokens: Optional[int],
+    tokenizer,
+    model,
+    cfg: DictDefault,
+    cli_args: TrainerCliArgs,
+) -> List[str]:
+    prompter = cli_args.prompter
+    default_tokens = {"unk_token": "<unk>", "bos_token": "<s>", "eos_token": "</s>"}
+
+    for token, symbol in default_tokens.items():
+        # If the token isn't already specified in the config, add it
+        if not (cfg.special_tokens and token in cfg.special_tokens):
+            tokenizer.add_special_tokens({token: symbol})
+
+    prompter_module = None
+    if prompter:
+        prompter_module = getattr(
+            importlib.import_module("axolotl.prompters"), prompter
+        )
+
+    if prompter_module:
+        prompts = [next(
+            prompter_module().build_prompt(instruction=p)
+        ) for p in prompts]
+    batch = tokenizer(prompts, return_tensors="pt", add_special_tokens=True)
+
+    with torch.no_grad():
+        max_tokens_val = max_tokens or 1024
+        generation_config = GenerationConfig(
+            repetition_penalty=1.1,
+            max_new_tokens=max_tokens_val,
+            temperature=0.9,
+            top_p=0.95,
+            top_k=40,
+            bos_token_id=tokenizer.bos_token_id,
+            eos_token_id=tokenizer.eos_token_id,
+            pad_token_id=tokenizer.pad_token_id,
+            do_sample=True,
+            use_cache=True,
+            return_dict_in_generate=True,
+            output_attentions=False,
+            output_hidden_states=False,
+            output_scores=False,
+        )
+        generated = model.generate(
+            inputs=batch["input_ids"].to(cfg.device),
+            generation_config=generation_config,
+        )
+    decoded_responses = tokenizer.batch_decode(generated["sequences"].cpu().tolist())
+    return decoded_responses
+
+def do_inference_cli(
     *,
     cfg: DictDefault,
     cli_args: TrainerCliArgs,
@@ -226,8 +300,10 @@ def do_inference(
         print(tokenizer.decode(generated["sequences"].cpu().tolist()[0]))
 
 
+
 def do_inference_gradio(
     *,
+    chat: bool,
     cfg: DictDefault,
     cli_args: TrainerCliArgs,
 ):
@@ -254,48 +330,34 @@ def do_inference_gradio(
 
     model = model.to(cfg.device, dtype=cfg.torch_dtype)
 
-    def generate(instruction):
-        if not instruction:
+    def generate(message: str, history: List):
+        if not message:
             return
         if prompter_module:
             # pylint: disable=stop-iteration-return
             prompt: str = next(
-                prompter_module().build_prompt(instruction=instruction.strip("\n"))
+                prompter_module().build_prompt(instruction=message.strip("\n"))
             )
         else:
-            prompt = instruction.strip()
+            prompt = message.strip()
 
-        if chat_template_str:
-            batch = tokenizer.apply_chat_template(
-                [
-                    {
-                        "role": "user",
-                        "content": prompt,
-                    }
-                ],
-                return_tensors="pt",
-                add_special_tokens=True,
-                add_generation_prompt=True,
-                chat_template=chat_template_str,
-                tokenize=True,
-                return_dict=True,
-            )
-        else:
-            batch = tokenizer(prompt, return_tensors="pt", add_special_tokens=True)
+        history_chat_format = []
+        for user_msg, assistant_msg in history:
+            history_chat_format.append({"role": "user", "content": user_msg})
+            history_chat_format.append({"role": "assistant", "content": assistant_msg})
+        history_chat_format.append({"role": "user", "content": prompt})
+        tokenized_pt = tokenizer.apply_chat_template(
+            history_chat_format, return_tensors="pt", add_generation_prompt=True
+        )
 
         model.eval()
         with torch.no_grad():
+            streamer = TextIteratorStreamer(
+                tokenizer, skip_special_tokens=True, skip_prompt=True, timeout=10
+            )
+
             generation_config = GenerationConfig(
-                repetition_penalty=1.1,
                 max_new_tokens=cfg.get("gradio_max_new_tokens", 1024),
-                temperature=cfg.get("gradio_temperature", 0.9),
-                top_p=0.95,
-                top_k=40,
-                bos_token_id=tokenizer.bos_token_id,
-                eos_token_id=tokenizer.eos_token_id,
-                pad_token_id=tokenizer.pad_token_id,
-                do_sample=True,
-                use_cache=True,
                 return_dict_in_generate=True,
                 output_attentions=False,
                 output_hidden_states=False,
@@ -318,12 +380,15 @@ def do_inference_gradio(
                 all_text += new_text
                 yield all_text
 
-    demo = gr.Interface(
-        fn=generate,
-        inputs="textbox",
-        outputs="text",
-        title=cfg.get("gradio_title", "Axolotl Gradio Interface"),
-    )
+    if chat:
+        demo = gr.ChatInterface(generate)
+    else:
+        demo = gr.Interface(
+            fn=generate,
+            inputs="textbox",
+            outputs="text",
+            title=cfg.get("gradio_title", "Axolotl Gradio Interface"),
+        )
 
     demo.queue().launch(
         show_api=False,
@@ -430,9 +495,12 @@ def load_datasets(
     cli_args: TrainerCliArgs,
 ) -> TrainDatasetMeta:
     tokenizer = load_tokenizer(cfg)
+    processor = load_processor(cfg, tokenizer=tokenizer) if cfg.processor_type else None
 
     train_dataset, eval_dataset, total_num_steps, prompters = prepare_dataset(
-        cfg, tokenizer
+        cfg,
+        tokenizer,
+        processor=processor,
     )
 
     if cli_args.debug or cfg.debug:

@@ -5,10 +5,13 @@ from __future__ import annotations
 import logging
 import math
 import os
+import re
 import traceback
 from shutil import copyfile
 from tempfile import NamedTemporaryFile
-from typing import TYPE_CHECKING, Any, Dict, List
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
+import asyncio
+from functools import partial
 
 import evaluate
 import numpy as np
@@ -18,6 +21,7 @@ import torch.distributed as dist
 import wandb
 from datasets import load_dataset
 from optimum.bettertransformer import BetterTransformer
+from tabulate import tabulate
 from tqdm import tqdm
 from transformers import (
     GenerationConfig,
@@ -26,12 +30,18 @@ from transformers import (
     TrainerControl,
     TrainerState,
     TrainingArguments,
+    StoppingCriteriaList,
 )
 from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR, IntervalStrategy
+import weave
+from weave import Evaluation as WeaveBaseEvaluation, Model as WeaveBaseModel
 
-from axolotl.utils import is_mlflow_available
+
+from axolotl.utils import is_mlflow_available, StopOnTokens
 from axolotl.utils.bench import log_gpu_memory_usage
+from axolotl.utils.callbacks.code_eval import CodeExecutionEval
 from axolotl.utils.callbacks.perplexity import Perplexity
+from axolotl.utils.callbacks.tool_eval import FunctionCallAccuracy
 from axolotl.utils.config.models.input.v0_4_1 import AxolotlInputConfig
 from axolotl.utils.distributed import (
     barrier,
@@ -93,6 +103,7 @@ class SaveBetterTransformerModelCallback(
             control.should_save = True
 
         if control.should_save:
+            print("Saving model from step_end callback")
             checkpoint_folder = os.path.join(
                 args.output_dir,
                 f"{PREFIX_CHECKPOINT_DIR}-{state.global_step}",
@@ -160,6 +171,12 @@ class LossWatchDogCallback(TrainerCallback):
         return control
 
 
+def _should_skip_special_tokens(cfg) -> bool:
+    return not bool(
+        cfg.eval_print_special_tokens and cfg.eval_print_special_tokens == True
+    )
+
+
 def bench_eval_callback_factory(trainer, tokenizer):
     accuracy = evaluate.load("accuracy")
     abcd_idx = [
@@ -205,6 +222,10 @@ def bench_eval_callback_factory(trainer, tokenizer):
             },
         )
         # bench_dataset = bench_dataset.remove_columns('subject')
+    elif trainer.args.bench_dataset == "humaneval":
+        LOG.info("Loading humaneval dataset")
+        bench_dataset = load_dataset("openai/openai_humaneval")
+        bench_dataset["eval"] = bench_dataset["test"]
     elif "/" in trainer.args.bench_dataset:
         bench_ds = trainer.args.bench_dataset
         bench_ds_name = "/".join(bench_ds.split("/", 2)[:2])
@@ -224,9 +245,19 @@ def bench_eval_callback_factory(trainer, tokenizer):
     if trainer.args.max_bench_samples is not None:
         bench_dataset = bench_dataset.select(range(trainer.args.max_bench_samples))
 
-    def tokenize_evals(example):
-        source = f"{tokenizer.bos_token}{example['input']}"
-        target = f"{example['output']}{tokenizer.eos_token}"
+    def tokenize_evals(bench_dataset: str, example):
+        if bench_dataset == "humaneval":
+            prompt, solution, entrypoint = (
+                example["prompt"],
+                example["canonical_solution"],
+                example["entry_point"],
+            )
+            # TODO BF apply chat template here
+            source = f"{tokenizer.bos_token}{prompt}"
+            target = f"{solution}{tokenizer.eos_token}"
+        else:
+            source = f"{tokenizer.bos_token}{example['input']}"
+            target = f"{example['output']}{tokenizer.eos_token}"
 
         tokenized_source = tokenizer(
             source,
@@ -245,14 +276,19 @@ def bench_eval_callback_factory(trainer, tokenizer):
             "input_ids"
         ]
 
-        return {
+        out = {
             "input_ids": input_ids,
             "labels": labels,
-            "subject": example["subject"],
         }
 
+        if bench_dataset == "mmlu":
+            out["subject"] = example["subject"]
+
+        return out
+
     with zero_first(is_main_process()):
-        bench_dataset = bench_dataset.map(tokenize_evals)
+        tokenize_fn = partial(tokenize_evals, trainer.args.bench_dataset)
+        bench_dataset = bench_dataset.map(tokenize_fn)
         bench_dataset = bench_dataset.filter(lambda x: x["labels"][-2] in abcd_idx)
 
     class BenchEvalCallback(TrainerCallback):
@@ -268,9 +304,13 @@ def bench_eval_callback_factory(trainer, tokenizer):
             metrics: Dict[str, float],  # pylint: disable=unused-argument
             **kwargs,  # pylint: disable=unused-argument
         ):
-            data_loader = trainer.get_bench_dataloader(
-                bench_dataset.remove_columns(["input", "subject", "output", "name"])
-            )
+
+            dl_dataset = bench_dataset
+            if args.bench_dataset == "mmlu":
+                dl_dataset = dl_dataset.remove_columns(
+                    ["input", "subject", "output", "name"]
+                )
+            data_loader = trainer.get_bench_dataloader(dl_dataset)
             trainer.model.eval()
             preds, refs = [], []
             loss_bench = 0
@@ -293,6 +333,11 @@ def bench_eval_callback_factory(trainer, tokenizer):
                     for label in labels.tolist()
                 ]
                 loss_bench += loss.item()
+            if args.bench_dataset == "humaneval":
+                results = {}
+                # TODO actually call eval
+                metrics[f"{bench_split}_bench_pass_rate_{args.bench_dataset}"] = 0
+                return
             # Extract results by subject.
             bench_name = bench_dataset["name"]
             bench_names: dict = {s: {"refs": [], "preds": []} for s in set(bench_name)}
@@ -344,9 +389,9 @@ def bench_eval_callback_factory(trainer, tokenizer):
                     bench_refs.extend(combined_bench_names[bench_name]["refs"])
                     bench_preds.extend(combined_bench_names[bench_name]["preds"])
                     if not pd.isna(bench_score):
-                        results[
-                            f"{bench_split}_bench_accuracy_{bench_name}"
-                        ] = bench_score
+                        results[f"{bench_split}_bench_accuracy_{bench_name}"] = (
+                            bench_score
+                        )
                         bench_scores.append(bench_score)
                     else:
                         results[f"{bench_split}_bench_accuracy_{bench_name}"] = 0.0
@@ -376,7 +421,9 @@ def causal_lm_bench_eval_callback_factory(trainer: Trainer, tokenizer):
         def __maybe_load_metrics(self):
             metrics = {}
             for metric in self.cfg.eval_causal_lm_metrics:
-                if metric == "perplexity":
+                if metric == "tool_use_json":
+                    metrics[metric] = FunctionCallAccuracy()
+                elif metric == "perplexity":
                     max_seq_len = self.cfg.eval_max_new_tokens
                     metrics[metric] = Perplexity(trainer.model, tokenizer, max_seq_len)
                 else:
@@ -468,6 +515,8 @@ def causal_lm_bench_eval_callback_factory(trainer: Trainer, tokenizer):
             def predict_with_generate():
                 eval_src, eval_pred, eval_ref = [], [], []
 
+                skip_special_tokens = _should_skip_special_tokens(self.cfg)
+
                 for batch in tqdm(eval_dataloader):
                     batch_labels = batch["labels"].to(device)
                     batch_input_ids = batch["input_ids"].to(device)
@@ -512,18 +561,21 @@ def causal_lm_bench_eval_callback_factory(trainer: Trainer, tokenizer):
                             completion_token_ids_list.append(completion_token_ids)
 
                     prompt_texts = tokenizer.batch_decode(
-                        prompt_token_ids_list, skip_special_tokens=True
+                        prompt_token_ids_list,
+                        skip_special_tokens=skip_special_tokens,
                     )
                     completion_texts = tokenizer.batch_decode(
-                        completion_token_ids_list, skip_special_tokens=True
+                        completion_token_ids_list,
+                        skip_special_tokens=skip_special_tokens,
                     )
 
                     with torch.no_grad():
-                        prompt_encoding = tokenizer(
+                        prompts_encoded_padded = tokenizer(
                             prompt_texts, padding=True, return_tensors="pt"
                         ).to(self.cfg.device)
                         predictions = trainer.model.generate(
-                            **prompt_encoding, generation_config=generation_config
+                            **prompts_encoded_padded,
+                            generation_config=generation_config,
                         )
 
                     prediction_all_tokens = predictions["sequences"].cpu().tolist()
@@ -539,7 +591,8 @@ def causal_lm_bench_eval_callback_factory(trainer: Trainer, tokenizer):
                         )
 
                     predicted_texts = tokenizer.batch_decode(
-                        prediction_without_prompt_tokens_list, skip_special_tokens=True
+                        prediction_without_prompt_tokens_list,
+                        skip_special_tokens=skip_special_tokens,
                     )
 
                     eval_src.extend(prompt_texts)
@@ -550,11 +603,58 @@ def causal_lm_bench_eval_callback_factory(trainer: Trainer, tokenizer):
 
             if is_main_process():
                 eval_preds = predict_with_generate()
-                trainer.log(evaluate_preds(*eval_preds))
+                scores = evaluate_preds(*eval_preds)
+                scores = {f"metrics/{k}": v for k, v in scores.items()}
+                trainer.log(scores)
 
             return control
 
     return CausalLMBenchEvalCallback
+
+
+def log_evaluation_results_to_weave(
+    base_model_name: str,
+    run_name: str,
+    step: int,
+    row_wise_samples: List[Tuple],
+    metrics: Optional[Dict[str, float]] = None,
+):
+    """
+    Log evaluation results to Weave. Weave expects a function to be called for each evaluation, so this mocks that flow.
+    """
+
+    prompt_to_sample = {}
+    dataset = []
+    for prompt, correct, predicted_gen, _ in row_wise_samples:
+        prompt_to_sample[prompt] = predicted_gen
+        dataset.append({"prompt": prompt, "expected": correct})
+
+    class WeaveEvaluation(WeaveBaseEvaluation):
+        step: int
+        run_name: str
+
+    class WeaveModel(WeaveBaseModel):
+        base_model_name: str
+        fine_tuning_step: int
+
+        @weave.op()
+        def predict(self, prompt):
+            return prompt_to_sample[prompt]
+
+    model = WeaveModel(base_model_name=base_model_name, fine_tuning_step=step)
+    evaluation = WeaveEvaluation(dataset=dataset, step=step, run_name=run_name)
+
+    with weave.attributes({"run_name": run_name, "step": step}):
+        # TOOD add metadata and attributes
+        asyncio.run(evaluation.evaluate(model))
+
+
+TABLE_ROWS = [
+    "Prompt",
+    "Correct Completion",
+    "Predicted Completion (model.generate)",
+    "Predicted Completion (trainer.prediction_step)",
+]
 
 
 def log_prediction_callback_factory(trainer: Trainer, tokenizer, logger: str):
@@ -581,6 +681,9 @@ def log_prediction_callback_factory(trainer: Trainer, tokenizer, logger: str):
 
             trainer.model.eval()
             device = torch.device(self.cfg.device)
+            stopping_criteria = StoppingCriteriaList(
+                [StopOnTokens([tokenizer.eos_token_id])]
+            )
 
             # pylint: disable=duplicate-code
             generation_config = GenerationConfig(
@@ -622,6 +725,8 @@ def log_prediction_callback_factory(trainer: Trainer, tokenizer, logger: str):
                     "Predicted Completion (trainer.prediction_step)": [],
                 }
                 row_index = 0
+
+                skip_special_tokens = _should_skip_special_tokens(self.cfg)
 
                 for batch in tqdm(table_dataloader):
                     if row_index > eval_table_size:
@@ -683,13 +788,16 @@ def log_prediction_callback_factory(trainer: Trainer, tokenizer, logger: str):
                             pred_step_token_ids_list.append(pred_step_token_ids)
 
                     prompt_texts = tokenizer.batch_decode(
-                        prompt_token_ids_list, skip_special_tokens=True
+                        prompt_token_ids_list,
+                        skip_special_tokens=skip_special_tokens,
                     )
                     completion_texts = tokenizer.batch_decode(
-                        completion_token_ids_list, skip_special_tokens=True
+                        completion_token_ids_list,
+                        skip_special_tokens=skip_special_tokens,
                     )
                     pred_step_texts = tokenizer.batch_decode(
-                        pred_step_token_ids_list, skip_special_tokens=True
+                        pred_step_token_ids_list,
+                        skip_special_tokens=skip_special_tokens,
                     )
 
                     with torch.no_grad():
@@ -697,7 +805,9 @@ def log_prediction_callback_factory(trainer: Trainer, tokenizer, logger: str):
                             prompt_texts, padding=True, return_tensors="pt"
                         ).to(self.cfg.device)
                         predictions = trainer.model.generate(
-                            **prompt_encoding, generation_config=generation_config
+                            **prompt_encoding,
+                            generation_config=generation_config,
+                            stopping_criteria=stopping_criteria,
                         )
 
                     prediction_all_tokens = predictions["sequences"].cpu().tolist()
@@ -713,7 +823,8 @@ def log_prediction_callback_factory(trainer: Trainer, tokenizer, logger: str):
                         )
 
                     predicted_texts = tokenizer.batch_decode(
-                        prediction_without_prompt_tokens_list, skip_special_tokens=True
+                        prediction_without_prompt_tokens_list,
+                        skip_special_tokens=skip_special_tokens,
                     )
 
                     for (
@@ -734,6 +845,22 @@ def log_prediction_callback_factory(trainer: Trainer, tokenizer, logger: str):
                             "Predicted Completion (trainer.prediction_step)"
                         ].append(pred_step_text)
                         row_index += 1
+
+                row_wise_samples = list(
+                    zip(
+                        table_data[TABLE_ROWS[0]],
+                        table_data[TABLE_ROWS[1]],
+                        table_data[TABLE_ROWS[2]],
+                        table_data[TABLE_ROWS[3]],
+                    )
+                )
+                if self.cfg.weave_log_eval:
+                    log_evaluation_results_to_weave(
+                        self.cfg.base_model,
+                        self.cfg.wandb_name,
+                        state.global_step,
+                        row_wise_samples,
+                    )
                 if logger == "wandb":
                     wandb.run.log({f"{name} - Predictions vs Ground Truth": pd.DataFrame(table_data)})  # type: ignore[attr-defined]
                 elif logger == "mlflow" and is_mlflow_available():
@@ -746,6 +873,15 @@ def log_prediction_callback_factory(trainer: Trainer, tokenizer, logger: str):
                         data=table_data,
                         artifact_file="PredictionsVsGroundTruth.json",
                         tracking_uri=tracking_uri,
+                    )
+                else:
+                    print(
+                        tabulate(
+                            row_wise_samples,
+                            headers=TABLE_ROWS,
+                            tablefmt="simple_grid",
+                            maxcolwidths=[35, 35, 35, 35],
+                        )
                     )
 
             if is_main_process():

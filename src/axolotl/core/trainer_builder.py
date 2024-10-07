@@ -17,6 +17,8 @@ from dataclasses import dataclass, field
 from functools import wraps
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Type, Union
+import string
+import random
 
 import torch
 import transformers
@@ -61,12 +63,14 @@ from axolotl.utils.callbacks import (
     log_prediction_callback_factory,
 )
 from axolotl.utils.callbacks.lisa import lisa_callback_factory
+from axolotl.utils.chat_templates import chat_templates
 from axolotl.utils.collators import (
     BatchSamplerDataCollatorForSeq2Seq,
     DataCollatorForSeq2Seq,
     MambaDataCollator,
     V2BatchSamplerDataCollatorForSeq2Seq,
 )
+from axolotl.utils.collators.mm_chat import MultiModalChatDataCollator
 from axolotl.utils.models import ensure_dtype
 from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
 from axolotl.utils.schedulers import (
@@ -249,6 +253,10 @@ class AxolotlTrainingMixins:
         metadata={
             "help": "workaround to pass an alternate lr scheduler to the HF trainer"
         },
+    )
+    chat_template: Optional[str] = field(
+        default=None,
+        metadata={"help": "Chat template converting chat messages to text"},
     )
 
 
@@ -1043,10 +1051,11 @@ class TrainerBuilderBase(abc.ABC):
     _model_ref = None
     _peft_config = None
 
-    def __init__(self, cfg, model, tokenizer):
+    def __init__(self, cfg, model, tokenizer, processor=None):
         self.cfg = cfg
         self.model = model
         self.tokenizer = tokenizer
+        self.processor = processor
 
         # in case the model supports tagging, add the axolotl tag.
         # This makes sure the tag is correctly pushed even if a user calls
@@ -1158,18 +1167,20 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
 
     def get_post_trainer_create_callbacks(self, trainer):
         callbacks = []
-        if self.cfg.use_wandb and self.cfg.eval_table_size > 0:
-            LogPredictionCallback = log_prediction_callback_factory(
-                trainer, self.tokenizer, "wandb"
+        if self.cfg.eval_table_size > 0:
+            logger = (
+                "wandb"
+                if self.cfg.use_wandb
+                else "mlflow"
+                if self.cfg.use_mlflow
+                else ""
             )
-            callbacks.append(LogPredictionCallback(self.cfg))
-        if (
-            self.cfg.use_mlflow
-            and is_mlflow_available()
-            and self.cfg.eval_table_size > 0
-        ):
+            if logger == "mlflow" and not is_mlflow_available():
+                raise ValueError(
+                    "MLflow is not installed. Please install mlflow to use this feature."
+                )
             LogPredictionCallback = log_prediction_callback_factory(
-                trainer, self.tokenizer, "mlflow"
+                trainer, self.tokenizer, logger
             )
             callbacks.append(LogPredictionCallback(self.cfg))
 
@@ -1425,9 +1436,12 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             report_to.append("tensorboard")
 
         training_arguments_kwargs["report_to"] = report_to
-        training_arguments_kwargs["run_name"] = (
-            self.cfg.wandb_name if self.cfg.use_wandb else None
-        )
+        run_name = self.cfg.wandb_name if self.cfg.use_wandb else None
+        if self.cfg.add_random_suffix_to_run_name:
+            suffix = "".join(random.choices(string.ascii_letters + string.digits, k=4))
+            run_name = f"{run_name}-{suffix}"
+            self.cfg.wandb_name = run_name
+        training_arguments_kwargs["run_name"] = run_name
         training_arguments_kwargs["optim"] = (
             self.cfg.optimizer if self.cfg.optimizer else "adamw_hf"
         )
@@ -1515,6 +1529,10 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         )
         training_arguments_kwargs["model_type"] = self.cfg.model_config_type
         training_arguments_kwargs["pretraining"] = bool(self.cfg.pretraining_dataset)
+        if self.cfg.chat_template:
+            training_arguments_kwargs["chat_template"] = chat_templates(
+                self.cfg.chat_template
+            )
 
         if self.cfg.rl == "orpo":
             training_arguments_kwargs["orpo_alpha"] = self.cfg.orpo_alpha
@@ -1661,7 +1679,12 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             else:
                 collator = BatchSamplerDataCollatorForSeq2Seq
         else:
-            collator = DataCollatorForSeq2Seq
+            if self.cfg.processor_type and self.processor:
+                collator = MultiModalChatDataCollator
+                kwargs["processor"] = self.processor
+                kwargs["chat_template"] = training_args.chat_template
+            else:
+                collator = DataCollatorForSeq2Seq
 
         return collator(
             self.tokenizer,
